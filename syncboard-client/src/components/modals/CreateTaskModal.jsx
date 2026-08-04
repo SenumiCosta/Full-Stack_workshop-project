@@ -29,7 +29,8 @@ const CreateTaskModal = ({ onClose, onSave }) => {
         className="glass-panel"
         style={styles.modal}
       >
-        <h3>Add New Task</h3>
+        <h3 style={styles.title}>Add New Task</h3>
+        <p style={styles.subtitle}>Create a task card for the selected board.</p>
 
         <div style={styles.inputGroup}>
           <label style={styles.label}>Task Title</label>
@@ -98,16 +99,13 @@ const CreateTaskModal = ({ onClose, onSave }) => {
             type="button"
             className="btn-secondary"
             onClick={onClose}
-            style={{ marginRight: '10px' }}
+            style={{ marginRight: '10px', borderRadius: '999px' }}
           >
             Cancel
           </button>
 
 
-          <button
-            type="submit"
-            className="btn-primary"
-          >
+          <button type="submit" className="btn-primary" style={{ borderRadius: '999px' }}>
             Save Task
           </button>
 
@@ -137,8 +135,9 @@ const styles = {
 
   modal: {
     width: '100%',
-    maxWidth: '450px',
-    padding: '30px',
+    maxWidth: '520px',
+    padding: '32px',
+    borderRadius: '28px',
   },
 
 
@@ -153,6 +152,8 @@ const styles = {
     color: 'var(--text-muted)',
     marginBottom: '5px',
   },
+  title: { fontSize: '1.6rem', marginBottom: '6px' },
+  subtitle: { color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '14px' },
 
 
   actions: {
