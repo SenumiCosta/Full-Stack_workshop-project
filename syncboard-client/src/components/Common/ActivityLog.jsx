@@ -3,10 +3,11 @@ import React from 'react';
 const ActivityLog = ({ logs }) => {
   return (
     <div style={styles.container} className="glass-panel">
-      <h3>System Activity</h3>
-      <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '15px' }}>
-        Live activity log and sync history
-      </p>
+      <div style={styles.headerRow}>
+        <h3>System Activity</h3>
+        <span style={styles.liveDot}>Live</span>
+      </div>
+      <p style={styles.subtitle}>Recent sync events and board updates.</p>
      
       <div style={styles.list}>
         {logs && logs.length > 0 ? (
@@ -28,11 +29,15 @@ const ActivityLog = ({ logs }) => {
 
 const styles = {
   container: { 
-    width: '280px', 
+    width: '300px', 
     padding: '20px', 
     display: 'flex', 
-    flexDirection: 'column' 
+    flexDirection: 'column',
+    gap: '10px'
   },
+  headerRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
+  liveDot: { padding: '6px 10px', borderRadius: '999px', background: 'rgba(37, 99, 235, 0.1)', color: 'var(--color-primary)', fontSize: '0.75rem', fontWeight: 700 },
+  subtitle: { fontSize: '0.82rem', color: 'var(--text-muted)' },
 
   list: { 
     display: 'flex', 
@@ -43,8 +48,8 @@ const styles = {
   },
 
   item: { 
-    borderBottom: '1px solid var(--glass-border)', 
-    paddingBottom: '8px' 
+    borderBottom: '1px solid var(--line)', 
+    paddingBottom: '10px' 
   },
 
   text: { 

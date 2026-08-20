@@ -5,7 +5,7 @@ const Sidebar = ({ activeBoardId, onSelectBoard }) => {
   const [boards, setBoards] = useState([]);
   const [newBoardName, setNewBoardName] = useState('');
 
-  // Fetch boards when component loads
+  // Fetch boards from API when component loads
   useEffect(() => {
     const fetchBoards = async () => {
       try {
@@ -16,7 +16,7 @@ const Sidebar = ({ activeBoardId, onSelectBoard }) => {
         }
       } catch (err) {
         console.error('Failed to fetch boards:', err);
-        alert('Failed to load boards. Please make sure the server is running.');
+        alert('Failed to load boards. Make sure the server is running.');
       }
     };
     fetchBoards();
@@ -75,8 +75,8 @@ const Sidebar = ({ activeBoardId, onSelectBoard }) => {
                 📁 {board.name}
               </span>
               {boards.length > 1 && (
-                <button 
-                  style={styles.deleteBtn} 
+                <button
+                  style={styles.deleteBtn}
                   onClick={() => handleDelete(board._id)}
                   aria-label="Delete board"
                 >
@@ -105,48 +105,48 @@ const Sidebar = ({ activeBoardId, onSelectBoard }) => {
 };
 
 const styles = {
-  container: { 
-    display: 'flex', 
-    flexDirection: 'column', 
-    height: '100%' 
+  container: {
+    display: 'flex',
+    flexDirection: 'column',
+    height: '100%'
   },
-  list: { 
-    display: 'flex', 
-    flexDirection: 'column', 
-    gap: '8px', 
-    flex: 1, 
-    overflowY: 'auto' 
+  list: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+    flex: 1,
+    overflowY: 'auto'
   },
-  item: { 
-    display: 'flex', 
-    justifyContent: 'space-between', 
-    padding: '10px', 
-    borderRadius: '8px', 
+  item: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    padding: '10px',
+    borderRadius: '8px',
     border: '1px solid transparent',
     alignItems: 'center'
   },
-  link: { 
-    cursor: 'pointer', 
-    flex: 1 
+  link: {
+    cursor: 'pointer',
+    flex: 1
   },
-  deleteBtn: { 
-    background: 'none', 
-    border: 'none', 
-    color: '#ef4444', 
+  deleteBtn: {
+    background: 'none',
+    border: 'none',
+    color: '#ef4444',
     cursor: 'pointer',
     fontSize: '1rem',
     padding: '4px 8px',
     borderRadius: '4px'
   },
-  form: { 
-    marginTop: '20px', 
-    borderTop: '1px solid var(--glass-border)', 
-    paddingTop: '20px' 
+  form: {
+    marginTop: '20px',
+    borderTop: '1px solid var(--glass-border)',
+    paddingTop: '20px'
   },
-  input: { 
+  input: {
     width: '100%',
     padding: '8px 12px',
-    marginBottom: '10px', 
+    marginBottom: '10px',
     fontSize: '0.85rem',
     borderRadius: '6px',
     border: '1px solid var(--glass-border)',
