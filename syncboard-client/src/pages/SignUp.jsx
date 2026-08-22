@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import api from '..api/apiClient';
 
 const SignUp = () => {
   const [name, setName] = useState('');
@@ -9,17 +10,22 @@ const SignUp = () => {
   const [error, setError] = useState('');
   const navigate = useNavigate();
 
-  const handleSignUp = (e) => {
-    e.preventDefault();
-    if (password !== confirmPassword) {
-      setError('Passwords do not match.');
-      return;
-    }
-    // Simulate signup
-    localStorage.setItem('syncboard_auth', 'true');
-    localStorage.setItem('syncboard_user', name);
+  const handleSignUp = async (e) => {
+  e.preventDefault();
+  if (password !== confirmPassword) {
+    setError('Passwords do not match.');
+    return;
+  }
+  setError('');
+  try {
+    const res = await api.post('/auth/register', { name, email, password });
+    localStorage.setItem('syncboard_token', res.data.token);
+    localStorage.setItem('syncboard_user', JSON.stringify(res.data.user));
     navigate('/dashboard');
-  };
+  } catch (err) {
+    setError(err.response?.data?.message || 'Registration failed');
+  }
+};
 
   return (
     <div style={styles.container}>

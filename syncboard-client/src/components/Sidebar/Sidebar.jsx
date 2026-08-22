@@ -1,100 +1,93 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import api from '../../api/apiClient';
 
-const BoardIcon = () => (
-  <svg
-    xmlns="http://www.w3.org/2000/svg"
-    width="16"
-    height="16"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.8"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    style={{ marginRight: '8px', verticalAlign: 'middle' }}
-  >
-    <path d="M3 7.5A2.5 2.5 0 0 1 5.5 5h3A2.5 2.5 0 0 1 11 7.5v9A2.5 2.5 0 0 1 8.5 19h-3A2.5 2.5 0 0 1 3 16.5z"></path>
-    <path d="M13 7.5A2.5 2.5 0 0 1 15.5 5h3A2.5 2.5 0 0 1 21 7.5v9A2.5 2.5 0 0 1 18.5 19h-3A2.5 2.5 0 0 1 13 16.5z"></path>
-  </svg>
-);
+const Sidebar = ({ activeBoardId, onSelectBoard }) => {
+  const [boards, setBoards] = useState([]);
+  const [newBoardName, setNewBoardName] = useState('');
 
-const DeleteIcon = () => (
-  <svg
-    xmlns="http://www.w3.org/2000/svg"
-    width="14"
-    height="14"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.8"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-  >
-    <path d="M3 6h18"></path>
-    <path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"></path>
-    <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path>
-    <path d="M10 11v6"></path>
-    <path d="M14 11v6"></path>
-  </svg>
-);
+  // Fetch boards from API when component loads
+  useEffect(() => {
+    const fetchBoards = async () => {
+      try {
+        const res = await api.get('/boards');
+        setBoards(res.data);
+        if (res.data.length > 0 && !activeBoardId) {
+          onSelectBoard(res.data[0]._id);
+        }
+      } catch (err) {
+        console.error('Failed to fetch boards:', err);
+        alert('Failed to load boards. Make sure the server is running.');
+      }
+    };
+    fetchBoards();
+  }, []);
 
-const PlusIcon = () => (
-  <svg
-    xmlns="http://www.w3.org/2000/svg"
-    width="14"
-    height="14"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    style={{ marginRight: '6px', verticalAlign: 'middle' }}
-  >
-    <path d="M12 5v14"></path>
-    <path d="M5 12h14"></path>
-  </svg>
-);
-
-const Sidebar = ({ boards, activeBoardId, onSelectBoard, onCreateBoard, onDeleteBoard }) => {
-  const [newBoardName, setNewBoardName] = React.useState('');
-
-  const handleSubmit = (e) => {
+  // Create a new board
+  const handleCreate = async (e) => {
     e.preventDefault();
-    if (newBoardName.trim()) {
-      onCreateBoard(newBoardName);
+    if (!newBoardName.trim()) return;
+    try {
+      const res = await api.post('/boards', { name: newBoardName });
+      setBoards([...boards, res.data]);
       setNewBoardName('');
+      onSelectBoard(res.data._id);
+    } catch (err) {
+      console.error('Failed to create board:', err);
+      alert('Failed to create board');
+    }
+  };
+
+  // Delete a board
+  const handleDelete = async (id) => {
+    if (!confirm('Are you sure you want to delete this board?')) return;
+    try {
+      await api.delete(`/boards/${id}`);
+      const updated = boards.filter(b => b._id !== id);
+      setBoards(updated);
+      if (activeBoardId === id && updated.length > 0) {
+        onSelectBoard(updated[0]._id);
+      }
+    } catch (err) {
+      console.error('Failed to delete board:', err);
+      alert('Failed to delete board');
     }
   };
 
   return (
     <div style={styles.container}>
-      <div style={styles.headerRow}>
-        <h3 style={styles.title}>My Boards</h3>
-        <span style={styles.badge}>{boards.length}</span>
-      </div>
-     
+      <h3 style={{ marginBottom: '15px' }}>My Boards</h3>
       <div style={styles.list}>
-        {boards.map(board => (
-          <div
-            key={board.id}
-            style={{
-              ...styles.item,
-              background: board.id === activeBoardId ? 'rgba(99, 102, 241, 0.15)' : 'transparent',
-              borderColor: board.id === activeBoardId ? 'var(--color-primary)' : 'transparent'
-            }}
-          >
-            <span style={styles.link} onClick={() => onSelectBoard(board.id)}>
-              <BoardIcon /> {board.name}
-            </span>
-            <button style={styles.deleteBtn} onClick={() => onDeleteBoard(board.id)} aria-label={`Delete ${board.name}`}>
-              <DeleteIcon />
-            </button>
-          </div>
-        ))}
+        {boards.length === 0 ? (
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+            No boards yet. Create one below!
+          </p>
+        ) : (
+          boards.map(board => (
+            <div
+              key={board._id}
+              style={{
+                ...styles.item,
+                background: board._id === activeBoardId ? 'rgba(99, 102, 241, 0.15)' : 'transparent',
+                borderColor: board._id === activeBoardId ? 'var(--color-primary)' : 'transparent'
+              }}
+            >
+              <span style={styles.link} onClick={() => onSelectBoard(board._id)}>
+                📁 {board.name}
+              </span>
+              {boards.length > 1 && (
+                <button
+                  style={styles.deleteBtn}
+                  onClick={() => handleDelete(board._id)}
+                  aria-label="Delete board"
+                >
+                  🗑️
+                </button>
+              )}
+            </div>
+          ))
+        )}
       </div>
-
-      <form onSubmit={handleSubmit} style={styles.form}>
+      <form onSubmit={handleCreate} style={styles.form}>
         <input
           type="text"
           placeholder="New Board Name..."
@@ -103,8 +96,8 @@ const Sidebar = ({ boards, activeBoardId, onSelectBoard, onCreateBoard, onDelete
           style={styles.input}
           required
         />
-        <button type="submit" className="btn-primary" style={{ width: '100%', padding: '10px 14px', borderRadius: '999px' }}>
-          <PlusIcon /> Create Board
+        <button type="submit" className="btn-primary" style={{ width: '100%', padding: '8px' }}>
+          + Create Board
         </button>
       </form>
     </div>
@@ -112,16 +105,54 @@ const Sidebar = ({ boards, activeBoardId, onSelectBoard, onCreateBoard, onDelete
 };
 
 const styles = {
-  container: { display: 'flex', flexDirection: 'column', height: '100%' },
-  headerRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' },
-  title: { fontSize: '1.15rem' },
-  badge: { minWidth: '30px', height: '30px', borderRadius: '999px', display: 'grid', placeItems: 'center', background: 'rgba(37, 99, 235, 0.1)', color: 'var(--color-primary)', fontSize: '0.8rem', fontWeight: 700 },
-  list: { display: 'flex', flexDirection: 'column', gap: '10px', flex: 1, overflowY: 'auto' },
-  item: { display: 'flex', justifyContent: 'space-between', padding: '12px 14px', borderRadius: '16px', border: '1px solid var(--line)', alignItems: 'center', background: '#fff' },
-  link: { cursor: 'pointer', flex: 1, display: 'flex', alignItems: 'center', fontSize: '0.94rem' },
-  deleteBtn: { background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', display: 'flex', alignItems: 'center' },
-  form: { marginTop: '20px', borderTop: '1px solid var(--line)', paddingTop: '18px' },
-  input: { marginBottom: '10px', fontSize: '0.9rem' }
+  container: {
+    display: 'flex',
+    flexDirection: 'column',
+    height: '100%'
+  },
+  list: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+    flex: 1,
+    overflowY: 'auto'
+  },
+  item: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    padding: '10px',
+    borderRadius: '8px',
+    border: '1px solid transparent',
+    alignItems: 'center'
+  },
+  link: {
+    cursor: 'pointer',
+    flex: 1
+  },
+  deleteBtn: {
+    background: 'none',
+    border: 'none',
+    color: '#ef4444',
+    cursor: 'pointer',
+    fontSize: '1rem',
+    padding: '4px 8px',
+    borderRadius: '4px'
+  },
+  form: {
+    marginTop: '20px',
+    borderTop: '1px solid var(--glass-border)',
+    paddingTop: '20px'
+  },
+  input: {
+    width: '100%',
+    padding: '8px 12px',
+    marginBottom: '10px',
+    fontSize: '0.85rem',
+    borderRadius: '6px',
+    border: '1px solid var(--glass-border)',
+    backgroundColor: 'var(--glass-bg)',
+    color: 'var(--text-primary)'
+  }
 };
 
 export default Sidebar;
