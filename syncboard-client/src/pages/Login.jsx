@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import api from '../api/apiClient';
 
 const Login = () => {
   const [email, setEmail] = useState('');
@@ -7,17 +8,30 @@ const Login = () => {
   const [error, setError] = useState('');
   const navigate = useNavigate();
 
-  const handleLogin = (e) => {
-    e.preventDefault();
-    if (!email || !password) {
-      setError('Please fill in all fields.');
-      return;
-    }
-    // Simulate successful login
-    localStorage.setItem('syncboard_auth', 'true');
-    localStorage.setItem('syncboard_user', email.split('@')[0]);
+  const handleLogin = async (e) => {
+  e.preventDefault();
+  setError('');
+
+  try {
+    const res = await api.post('/auth/login', {
+      email,
+      password
+    });
+
+    localStorage.setItem('syncboard_token', res.data.token);
+
+    localStorage.setItem(
+      'syncboard_user',
+      JSON.stringify(res.data.user)
+    );
+
     navigate('/dashboard');
-  };
+  } catch (err) {
+    setError(
+      err.response?.data?.message || 'Login failed'
+    );
+  }
+};
 
   return (
     <div style={styles.container}>
