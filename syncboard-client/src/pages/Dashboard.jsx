@@ -4,7 +4,7 @@ import { BoardContext } from '../context/BoardContext';
 
 import Sidebar from '../components/Sidebar/Sidebar';
 import ActivityLog from '../components/Common/ActivityLog';
-import CreateTaskModal from '../components/Modals/CreateTaskModal';
+import CreateTaskModal from "../components/modals/CreateTaskModal";
 
 const OnlineIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
