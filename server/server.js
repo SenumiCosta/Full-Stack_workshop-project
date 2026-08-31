@@ -3,12 +3,12 @@ const express = require('express');
 const cors = require('cors');
 const connectDB = require('./config/db');
 const authRoutes = require('./routes/authRoutes');
-const taskRoutes = require('./routes/taskRoutes');
+const boardRoutes = require('./routes/boardRoutes');
 
 const app = express();
 
 app.use(cors({
-  origin: 'http://localhost:5173',
+  origin: 'http://localhost:5174',
   credentials: true
 }));
 app.use(express.json());
@@ -25,7 +25,7 @@ app.get('/api/health', (req, res) => {
 });
 
 app.use('/api/auth', authRoutes);
-app.use('/api/boards/:boardId/tasks', taskRoutes);
+app.use('/api/boards', boardRoutes);
 
 app.use((req, res) => {
   res.status(404).json({
