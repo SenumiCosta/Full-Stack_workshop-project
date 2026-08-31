@@ -1,13 +1,7 @@
 import React from 'react';
 import { getDifferences, mergeData } from '../../utils/conflict';
 
-const ConflictModal = ({ 
-  isOpen, 
-  onClose, 
-  clientData, 
-  serverData, 
-  onResolve 
-}) => {
+const ConflictModal = ({ isOpen, onClose, clientData, serverData, onResolve }) => {
   if (!isOpen) return null;
 
   const differences = getDifferences(clientData, serverData);
@@ -23,12 +17,11 @@ const ConflictModal = ({
       <div className="glass-panel" style={styles.modal}>
         <h2 style={styles.title}>⚠️ Conflict Detected</h2>
         <p style={styles.subtitle}>
-          This item has been modified by someone else. 
-          Please choose which version to keep.
+          This task has been modified by someone else. Please choose which version to keep.
         </p>
 
         <div style={styles.differences}>
-          <h4>Changes:</h4>
+          <h4>Changes Found:</h4>
           {differences.length === 0 ? (
             <p style={styles.noChanges}>No significant differences found</p>
           ) : (
@@ -47,28 +40,28 @@ const ConflictModal = ({
         </div>
 
         <div style={styles.timestamps}>
-          <p>Last updated (your version): {new Date(clientData.updatedAt).toLocaleString()}</p>
-          <p>Last updated (server): {new Date(serverData.updatedAt).toLocaleString()}</p>
+          <p>Your version: {new Date(clientData.updatedAt).toLocaleString()}</p>
+          <p>Server version: {new Date(serverData.updatedAt).toLocaleString()}</p>
         </div>
 
         <div style={styles.actions}>
           <button 
             className="btn-secondary" 
-            onClick={() => handleResolve('client')}
+            onClick={() => handleResolve('client')} 
             style={styles.actionBtn}
           >
             Keep My Version
           </button>
           <button 
             className="btn-secondary" 
-            onClick={() => handleResolve('server')}
+            onClick={() => handleResolve('server')} 
             style={styles.actionBtn}
           >
             Use Server Version
           </button>
           <button 
             className="btn-primary" 
-            onClick={() => handleResolve('merge')}
+            onClick={() => handleResolve('merge')} 
             style={styles.actionBtn}
           >
             Merge Changes
@@ -159,7 +152,12 @@ const styles = {
   },
   actionBtn: {
     flex: 1,
-    minWidth: '120px'
+    minWidth: '120px',
+    padding: '10px 15px',
+    borderRadius: '6px',
+    border: 'none',
+    cursor: 'pointer',
+    fontSize: '0.9rem'
   }
 };
 

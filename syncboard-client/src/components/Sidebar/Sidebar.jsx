@@ -1,68 +1,66 @@
 import React, { useState, useEffect } from 'react';
 import api from '../../api/apiClient';
+import { useCache } from '../../context/CacheContext';
 
-const Sidebar = ({ activeBoardId, onSelectBoard }) => {
-  const [boards, setBoards] = useState([]);
+const Sidebar = ({ boards = [], activeBoardId, onSelectBoard, onCreateBoard, onDeleteBoard }) => {
   const [newBoardName, setNewBoardName] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
+  const { boardCache, isOffline, setLastSync } = useCache();
 
-  // Fetch boards from API when component loads
   useEffect(() => {
-    const fetchBoards = async () => {
-      try {
-        const res = await api.get('/boards');
-        setBoards(res.data);
-        if (res.data.length > 0 && !activeBoardId) {
-          onSelectBoard(res.data[0]._id);
+    const loadBoards = async () => {
+      setIsLoading(true);
+      const cachedBoards = boardCache.getAll();
+      if (cachedBoards && cachedBoards.length > 0) {
+        if (onSelectBoard && !activeBoardId) {
+          onSelectBoard(cachedBoards[0]._id);
         }
-      } catch (err) {
-        console.error('Failed to fetch boards:', err);
-        alert('Failed to load boards. Make sure the server is running.');
       }
+      if (!isOffline) {
+        try {
+          const res = await api.get('/boards');
+          const freshBoards = res.data.data || res.data || [];
+          if (onSelectBoard && freshBoards.length > 0 && !activeBoardId) {
+            onSelectBoard(freshBoards[0]._id);
+          }
+        } catch (err) {
+          console.error('Failed to fetch boards:', err);
+        }
+      }
+      setIsLoading(false);
     };
-    fetchBoards();
+    loadBoards();
   }, []);
 
-  // Create a new board
   const handleCreate = async (e) => {
     e.preventDefault();
     if (!newBoardName.trim()) return;
-    try {
-      const res = await api.post('/boards', { name: newBoardName });
-      setBoards([...boards, res.data]);
+    if (onCreateBoard) {
+      await onCreateBoard(newBoardName);
       setNewBoardName('');
-      onSelectBoard(res.data._id);
-    } catch (err) {
-      console.error('Failed to create board:', err);
-      alert('Failed to create board');
     }
   };
 
-  // Delete a board
   const handleDelete = async (id) => {
     if (!confirm('Are you sure you want to delete this board?')) return;
-    try {
-      await api.delete(`/boards/${id}`);
-      const updated = boards.filter(b => b._id !== id);
-      setBoards(updated);
-      if (activeBoardId === id && updated.length > 0) {
-        onSelectBoard(updated[0]._id);
-      }
-    } catch (err) {
-      console.error('Failed to delete board:', err);
-      alert('Failed to delete board');
+    if (onDeleteBoard) {
+      await onDeleteBoard(id);
     }
   };
 
   return (
     <div style={styles.container}>
-      <h3 style={{ marginBottom: '15px' }}>My Boards</h3>
+      <div style={styles.header}>
+        <h3 style={styles.title}>My Boards</h3>
+        {isOffline && <span style={styles.offlineBadge}>📡 Offline</span>}
+      </div>
       <div style={styles.list}>
-        {boards.length === 0 ? (
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-            No boards yet. Create one below!
-          </p>
+        {isLoading ? (
+          <p style={styles.loading}>Loading boards...</p>
+        ) : !boards || boards.length === 0 ? (
+          <p style={styles.empty}>No boards yet. Create one below!</p>
         ) : (
-          boards.map(board => (
+          Array.isArray(boards) && boards.map(board => (
             <div
               key={board._id}
               style={{
@@ -71,15 +69,11 @@ const Sidebar = ({ activeBoardId, onSelectBoard }) => {
                 borderColor: board._id === activeBoardId ? 'var(--color-primary)' : 'transparent'
               }}
             >
-              <span style={styles.link} onClick={() => onSelectBoard(board._id)}>
+              <span style={styles.link} onClick={() => onSelectBoard && onSelectBoard(board._id)}>
                 📁 {board.name}
               </span>
               {boards.length > 1 && (
-                <button
-                  style={styles.deleteBtn}
-                  onClick={() => handleDelete(board._id)}
-                  aria-label="Delete board"
-                >
+                <button style={styles.deleteBtn} onClick={() => handleDelete(board._id)}>
                   🗑️
                 </button>
               )}
@@ -96,7 +90,7 @@ const Sidebar = ({ activeBoardId, onSelectBoard }) => {
           style={styles.input}
           required
         />
-        <button type="submit" className="btn-primary" style={{ width: '100%', padding: '8px' }}>
+        <button type="submit" className="btn-primary" style={styles.createBtn}>
           + Create Board
         </button>
       </form>
@@ -109,6 +103,24 @@ const styles = {
     display: 'flex',
     flexDirection: 'column',
     height: '100%'
+  },
+  header: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '15px'
+  },
+  title: {
+    margin: 0,
+    fontSize: '1.1rem',
+    color: 'var(--text-primary)'
+  },
+  offlineBadge: {
+    fontSize: '0.7rem',
+    background: '#f59e0b',
+    color: '#fff',
+    padding: '2px 8px',
+    borderRadius: '12px'
   },
   list: {
     display: 'flex',
@@ -127,7 +139,8 @@ const styles = {
   },
   link: {
     cursor: 'pointer',
-    flex: 1
+    flex: 1,
+    fontSize: '0.9rem'
   },
   deleteBtn: {
     background: 'none',
@@ -152,6 +165,23 @@ const styles = {
     border: '1px solid var(--glass-border)',
     backgroundColor: 'var(--glass-bg)',
     color: 'var(--text-primary)'
+  },
+  createBtn: {
+    width: '100%',
+    padding: '8px',
+    fontSize: '0.9rem'
+  },
+  loading: {
+    textAlign: 'center',
+    color: 'var(--text-muted)',
+    fontSize: '0.85rem',
+    padding: '20px 0'
+  },
+  empty: {
+    textAlign: 'center',
+    color: 'var(--text-muted)',
+    fontSize: '0.85rem',
+    padding: '20px 0'
   }
 };
 

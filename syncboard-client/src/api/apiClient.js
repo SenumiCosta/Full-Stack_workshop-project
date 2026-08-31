@@ -1,8 +1,12 @@
 import axios from 'axios';
 
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+
 const api = axios.create({
-  baseURL: 'http://localhost:5000/api',
-  headers: { 'Content-Type': 'application/json' }
+  baseURL: API_URL,
+  headers: {
+    'Content-Type': 'application/json'
+  }
 });
 
 api.interceptors.request.use((config) => {
@@ -13,11 +17,9 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Response interceptor for conflict handling
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    // If conflict (409), pass the error to be handled by the component
     if (error.response && error.response.status === 409) {
       return Promise.reject({
         ...error,
