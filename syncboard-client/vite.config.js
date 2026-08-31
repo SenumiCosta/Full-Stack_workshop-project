@@ -4,9 +4,18 @@ import path from 'path'
 
 export default defineConfig({
   plugins: [react()],
+  
+  // Resolve configuration
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
     },
+  },
+  
+  // Test configuration
+  test: {
+    environment: 'jsdom',
+    globals: true,
+    setupFiles: './src/test/setup.js',
   },
 })
