@@ -1,5 +1,4 @@
-import '@testing-library/jest-dom';
+const { TextEncoder, TextDecoder } = require('util');
 
-beforeEach(() => {
-  localStorage.clear();
-});
+global.TextEncoder = TextEncoder;
+global.TextDecoder = TextDecoder;

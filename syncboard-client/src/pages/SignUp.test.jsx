@@ -4,9 +4,9 @@ import { BrowserRouter } from 'react-router-dom';
 import SignUp from './SignUp';
 import api from '../api/apiClient';
 
-import { vi } from 'vitest';
+import { jest } from '@jest/globals';
 
-vi.mock('../api/apiClient');
+jest.mock('../api/apiClient');
 
 const renderSignUp = () => {
   return render(
@@ -19,7 +19,7 @@ const renderSignUp = () => {
 describe('SignUp Page', () => {
 
   beforeEach(() => {
-    vi.clearAllMocks();
+    jest.clearAllMocks();
     localStorage.clear();
   });
 

@@ -1,11 +1,11 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { BrowserRouter } from 'react-router-dom';
-import { vi } from 'vitest';
+import { jest } from '@jest/globals';
 import Login from './Login';
 import api from '../api/apiClient';
 
-vi.mock('../api/apiClient');
+jest.mock('../api/apiClient');
 
 const renderLogin = () => {
   return render(
@@ -17,7 +17,7 @@ const renderLogin = () => {
 
 describe('Login Page', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    jest.clearAllMocks();
     localStorage.clear();
   });
 
