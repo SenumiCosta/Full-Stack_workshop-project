@@ -1,65 +1,29 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const http = require('http');
 const connectDB = require('./config/db');
-const authRoutes = require('./routes/authRoutes');
-const boardRoutes = require('./routes/boardRoutes');
+const { initializeSocket } = require('./socket');
+
+connectDB();
 
 const app = express();
 
 app.use(cors({
-  origin: 'http://localhost:5174',
+  origin: process.env.CLIENT_URL || 'http://localhost:5173',
   credentials: true
 }));
+
 app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
 
-connectDB();
+app.use('/api/auth', require('./routes/authRoutes'));
+app.use('/api/boards', require('./routes/boardRoutes'));
 
-app.get('/api/health', (req, res) => {
-  res.status(200).json({
-    status: 'OK',
-    message: 'Server is running successfully',
-    timestamp: new Date().toISOString()
-  });
-});
-
-app.use('/api/auth', authRoutes);
-app.use('/api/boards', boardRoutes);
-
-app.use((req, res) => {
-  res.status(404).json({
-    success: false,
-    message: `Route not found - ${req.originalUrl}`
-  });
-});
-
-app.use((err, req, res, next) => {
-  console.error('Server Error:', err.stack);
-  res.status(500).json({
-    success: false,
-    message: 'Internal server error',
-    error: process.env.NODE_ENV === 'development' ? err.message : {}
-  });
-});
+const server = http.createServer(app);
+initializeSocket(server);
 
 const PORT = process.env.PORT || 5000;
-
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`📍 http://localhost:${PORT}`);
-});
-
-process.on('unhandledRejection', (err) => {
-  console.error('Unhandled Rejection:', err);
-  if (process.env.NODE_ENV === 'production') {
-    process.exit(1);
-  }
-});
-
-process.on('uncaughtException', (err) => {
-  console.error('Uncaught Exception:', err);
-  if (process.env.NODE_ENV === 'production') {
-    process.exit(1);
-  }
+server.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+  console.log(`http://localhost:${PORT}`);
 });
