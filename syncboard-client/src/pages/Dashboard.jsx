@@ -1,422 +1,602 @@
-import React, { useContext, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { BoardContext } from '../context/BoardContext';
-
+import React, { useState, useEffect } from 'react';
+import { useCache } from '../context/CacheContext';
+import api from '../api/apiClient';
 import Sidebar from '../components/Sidebar/Sidebar';
 import ActivityLog from '../components/Common/ActivityLog';
 import CreateTaskModal from '../components/Modals/CreateTaskModal';
-
-const OnlineIcon = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="12" cy="12" r="10" />
-  </svg>
-);
-
-const OfflineIcon = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="12" cy="12" r="10" />
-    <path d="M8 8l8 8" />
-  </svg>
-);
-
-const PlusIcon = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M12 5v14" />
-    <path d="M5 12h14" />
-  </svg>
-);
-
-const UserIcon = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M20 21a8 8 0 0 0-16 0" />
-    <circle cx="12" cy="8" r="4" />
-  </svg>
-);
+import TaskDetailModal from '../components/Modals/TaskDetailModal';
+import ConflictModal from '../components/Modals/ConflictModal';
 
 const Dashboard = () => {
-  const navigate = useNavigate();
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [modalTargetStatus, setModalTargetStatus] = useState('Not Started');
+  const [boards, setBoards] = useState([]);
+  const [activeBoardId, setActiveBoardId] = useState(null);
+  const [tasks, setTasks] = useState([]);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [selectedTask, setSelectedTask] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [conflictData, setConflictData] = useState(null);
 
-  const {
-    boards,
-    activeBoard,
-    activeBoardId,
-    setActiveBoardId,
-    isOffline,
-    toggleConnection,
-    moveTask,
-    createBoard,
-    deleteBoard,
-    addTask,
-    activityLogs
-  } = useContext(BoardContext);
+  const { taskCache, boardCache, isOffline, setLastSync } = useCache();
 
-  const handleLogout = () => {
-    localStorage.removeItem('syncboard_auth');
-    localStorage.removeItem('syncboard_user');
-    navigate('/login');
-  };
+  // Load boards on mount
+  useEffect(() => {
+    const loadBoards = async () => {
+      setIsLoading(true);
+      
+      // Load from cache first
+      const cachedBoards = boardCache.getAll();
+      if (cachedBoards && cachedBoards.length > 0) {
+        setBoards(cachedBoards);
+        if (!activeBoardId) {
+          setActiveBoardId(cachedBoards[0]._id);
+        }
+      }
 
-  const handleDragStart = (e, taskId) => {
-    e.dataTransfer.setData('text/plain', taskId);
-  };
+      // If online, fetch from API
+      if (!isOffline) {
+        try {
+          const res = await api.get('/boards');
+          const freshBoards = res.data.data || res.data;
+          setBoards(freshBoards);
+          boardCache.saveAll(freshBoards);
+          setLastSync();
+          
+          if (!activeBoardId && freshBoards.length > 0) {
+            setActiveBoardId(freshBoards[0]._id);
+          }
+        } catch (err) {
+          console.error('Failed to fetch boards:', err);
+        }
+      }
+      setIsLoading(false);
+    };
 
-  const handleDrop = (e, targetStatus) => {
-    e.preventDefault();
-    const taskId = e.dataTransfer.getData('text/plain');
-    if (activeBoard && taskId) {
-      const currentUser = localStorage.getItem('syncboard_user') || 'User';
-      moveTask(activeBoard.id, taskId, targetStatus, currentUser);
+    loadBoards();
+  }, []);
+
+  // Load tasks when active board changes
+  useEffect(() => {
+    if (!activeBoardId) return;
+
+    const loadTasks = async () => {
+      setIsLoading(true);
+
+      // Load from cache first
+      const cachedTasks = taskCache.getByBoard(activeBoardId);
+      if (cachedTasks && cachedTasks.length > 0) {
+        setTasks(cachedTasks);
+      }
+
+      // If online, fetch from API
+      if (!isOffline) {
+        try {
+          const res = await api.get(`/boards/${activeBoardId}/tasks`);
+          const freshTasks = res.data.data || res.data;
+          setTasks(freshTasks);
+          taskCache.saveByBoard(activeBoardId, freshTasks);
+          setLastSync();
+        } catch (err) {
+          console.error('Failed to fetch tasks:', err);
+        }
+      }
+      setIsLoading(false);
+    };
+
+    loadTasks();
+  }, [activeBoardId]);
+
+  // Handle task creation
+  const handleTaskCreated = async (newTask) => {
+    // Optimistic update
+    const tempTask = {
+      ...newTask,
+      _id: `temp_${Date.now()}`,
+      history: [{ text: 'Task created', timestamp: new Date().toISOString() }]
+    };
+    setTasks([...tasks, tempTask]);
+    taskCache.add(activeBoardId, tempTask);
+
+    if (isOffline) {
+      alert('Task saved offline. Will sync when online.');
+      return;
+    }
+
+    try {
+      const res = await api.post(`/boards/${activeBoardId}/tasks`, newTask);
+      const createdTask = res.data.data || res.data;
+      
+      const updatedTasks = tasks
+        .filter(t => t._id !== tempTask._id)
+        .concat(createdTask);
+      setTasks(updatedTasks);
+      taskCache.saveByBoard(activeBoardId, updatedTasks);
+      setLastSync();
+    } catch (err) {
+      console.error('Failed to create task:', err);
+      // Revert optimistic update
+      const updatedTasks = tasks.filter(t => t._id !== tempTask._id);
+      setTasks(updatedTasks);
+      taskCache.saveByBoard(activeBoardId, updatedTasks);
+      alert('Failed to create task. Please try again.');
     }
   };
 
-  const handleOpenCreateModal = (status) => {
-    setModalTargetStatus(status);
-    setShowCreateModal(true);
+  // Handle task update (with conflict detection)
+  const handleTaskUpdate = async (taskId, updates) => {
+    const oldTask = tasks.find(t => t._id === taskId);
+    if (!oldTask) return;
+
+    // Optimistic update
+    const updatedTasks = tasks.map(t =>
+      t._id === taskId ? { ...t, ...updates } : t
+    );
+    setTasks(updatedTasks);
+    taskCache.saveByBoard(activeBoardId, updatedTasks);
+
+    if (isOffline) {
+      alert('Task updated offline. Will sync when online.');
+      return;
+    }
+
+    try {
+      // Add client timestamp for conflict detection
+      const updatesWithTimestamp = {
+        ...updates,
+        _clientUpdatedAt: oldTask.updatedAt
+      };
+
+      const res = await api.put(`/tasks/${taskId}`, updatesWithTimestamp);
+      
+      // Success - update UI with server response
+      const finalTasks = tasks.map(t =>
+        t._id === taskId ? res.data.data : t
+      );
+      setTasks(finalTasks);
+      taskCache.saveByBoard(activeBoardId, finalTasks);
+      setLastSync();
+      
+    } catch (err) {
+      if (err.isConflict) {
+        // Show conflict modal
+        setConflictData({
+          clientData: { ...oldTask, ...updates },
+          serverData: err.serverData
+        });
+      } else {
+        console.error('Failed to update task:', err);
+        // Revert optimistic update
+        setTasks(tasks);
+        taskCache.saveByBoard(activeBoardId, tasks);
+        alert('Failed to update task. Please try again.');
+      }
+    }
   };
 
-  const handleSaveTask = (taskDetails) => {
-    if (!activeBoard) return;
-    addTask(activeBoard.id, {
-      ...taskDetails,
-      status: modalTargetStatus
-    });
+  // Handle conflict resolution
+  const handleConflictResolve = async (mergedData) => {
+    try {
+      const res = await api.put(`/tasks/${mergedData._id}`, mergedData);
+      
+      const finalTasks = tasks.map(t =>
+        t._id === mergedData._id ? res.data.data : t
+      );
+      setTasks(finalTasks);
+      taskCache.saveByBoard(activeBoardId, finalTasks);
+      setLastSync();
+      setConflictData(null);
+      
+    } catch (err) {
+      console.error('Failed to resolve conflict:', err);
+      alert('Failed to resolve conflict. Please try again.');
+    }
   };
+
+  // Handle task deletion
+  const handleTaskDelete = async (taskId) => {
+    if (!confirm('Are you sure you want to delete this task?')) return;
+
+    // Optimistic update
+    const updatedTasks = tasks.filter(t => t._id !== taskId);
+    setTasks(updatedTasks);
+    taskCache.saveByBoard(activeBoardId, updatedTasks);
+
+    if (isOffline) {
+      alert('Task deleted offline. Will sync when online.');
+      return;
+    }
+
+    try {
+      await api.delete(`/tasks/${taskId}`);
+      setLastSync();
+    } catch (err) {
+      console.error('Failed to delete task:', err);
+      // Restore task on error
+      setTasks(tasks);
+      taskCache.saveByBoard(activeBoardId, tasks);
+      alert('Failed to delete task. Please try again.');
+    }
+  };
+
+  // Handle board selection
+  const handleBoardSelect = (boardId) => {
+    setActiveBoardId(boardId);
+  };
+
+  // Handle board creation
+  const handleBoardCreated = async (boardName) => {
+    const tempBoard = {
+      _id: `temp_${Date.now()}`,
+      name: boardName,
+      createdAt: new Date().toISOString()
+    };
+
+    setBoards([...boards, tempBoard]);
+    boardCache.add(tempBoard);
+
+    if (isOffline) {
+      alert('Board created offline. Will sync when online.');
+      return;
+    }
+
+    try {
+      const res = await api.post('/boards', { name: boardName });
+      const newBoard = res.data.data || res.data;
+      
+      const updatedBoards = boards
+        .filter(b => b._id !== tempBoard._id)
+        .concat(newBoard);
+      setBoards(updatedBoards);
+      boardCache.saveAll(updatedBoards);
+      setActiveBoardId(newBoard._id);
+      setLastSync();
+    } catch (err) {
+      console.error('Failed to create board:', err);
+      const updatedBoards = boards.filter(b => b._id !== tempBoard._id);
+      setBoards(updatedBoards);
+      boardCache.saveAll(updatedBoards);
+      alert('Failed to create board. Please try again.');
+    }
+  };
+
+  // Handle board deletion
+  const handleBoardDelete = async (boardId) => {
+    if (!confirm('Are you sure you want to delete this board?')) return;
+
+    const updatedBoards = boards.filter(b => b._id !== boardId);
+    setBoards(updatedBoards);
+    boardCache.saveAll(updatedBoards);
+
+    if (activeBoardId === boardId && updatedBoards.length > 0) {
+      setActiveBoardId(updatedBoards[0]._id);
+    }
+
+    if (isOffline) {
+      alert('Board deleted offline. Will sync when online.');
+      return;
+    }
+
+    try {
+      await api.delete(`/boards/${boardId}`);
+      setLastSync();
+    } catch (err) {
+      console.error('Failed to delete board:', err);
+      const restored = await api.get('/boards');
+      const freshBoards = restored.data.data || restored.data;
+      setBoards(freshBoards);
+      boardCache.saveAll(freshBoards);
+      alert('Failed to delete board. Please try again.');
+    }
+  };
+
+  // Get current board name
+  const currentBoard = boards.find(b => b._id === activeBoardId);
 
   return (
-    <div style={styles.dashboardContainer}>
-      <header style={styles.navbar} className="glass-panel">
-        <div style={styles.brandArea}>
-          <div>
-            <h2 style={styles.logo}>SyncBoard</h2>
-            <p style={styles.navSubtitle}>Project workspace and workflow overview</p>
-          </div>
-          <span style={styles.navBadge}>Board {boards.length}</span>
-        </div>
-        <div style={styles.navActions}>
-          <button
-            className="btn-secondary"
-            onClick={toggleConnection}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              border: '1px solid var(--line-strong)',
-              background: isOffline ? 'rgba(37, 99, 235, 0.04)' : 'rgba(15, 23, 42, 0.03)',
-              color: isOffline ? 'var(--color-primary)' : 'var(--text-main)'
-            }}
-          >
-            {isOffline ? <OfflineIcon /> : <OnlineIcon />}
-            {isOffline ? 'Go Online' : 'Go Offline'}
-          </button>
-          <button className="btn-danger" onClick={handleLogout}>Logout</button>
-        </div>
-      </header>
-
-      <div style={styles.mainLayout}>
-        <aside style={styles.sidebar} className="glass-panel">
-          <Sidebar
-            boards={boards}
-            activeBoardId={activeBoardId}
-            onSelectBoard={setActiveBoardId}
-            onCreateBoard={createBoard}
-            onDeleteBoard={deleteBoard}
-          />
-        </aside>
-
-        <main style={styles.boardArea}>
-          {activeBoard ? (
-            <div>
-              <div style={styles.boardHeader}>
-                <div>
-                  <h1 style={styles.boardTitle}>{activeBoard.name}</h1>
-                  <p style={styles.boardMeta}>Showing tasks grouped by workflow stage</p>
-                </div>
-                <span style={styles.boardCount}>{activeBoard.tasks.length} tasks</span>
-              </div>
-
-              <div style={styles.columnsGrid}>
-                {['Not Started', 'In Progress', 'Done'].map((status) => (
-                  <div
-                    key={status}
-                    className="glass-panel"
-                    style={styles.column}
-                    onDragOver={(e) => e.preventDefault()}
-                    onDrop={(e) => handleDrop(e, status)}
-                  >
-                    <div style={styles.columnHeaderContainer}>
-                      <div>
-                        <h3 style={styles.columnHeader}>{status}</h3>
-                        <p style={styles.columnSubheader}>Tasks in this stage</p>
-                      </div>
-                      <button
-                        style={styles.addTaskInlineBtn}
-                        onClick={() => handleOpenCreateModal(status)}
-                        title="Add Task to this column"
-                        aria-label={`Add task to ${status}`}
-                      >
-                        <PlusIcon />
-                      </button>
-                    </div>
-
-                    <div style={styles.taskList}>
-                      {activeBoard.tasks
-                        .filter((task) => task.status === status)
-                        .map((task) => (
-                          <div
-                            key={task.id}
-                            style={styles.taskCard}
-                            className="glass-panel"
-                            draggable
-                            onDragStart={(e) => handleDragStart(e, task.id)}
-                          >
-                            <h4 style={styles.taskTitle}>{task.title}</h4>
-                            <p style={styles.taskDescription}>{task.description}</p>
-                            <div style={styles.taskMetaRow}>
-                              <span
-                                style={{
-                                  ...styles.priorityTag,
-                                  background:
-                                    task.priority === 'High'
-                                      ? 'rgba(220, 38, 38, 0.12)'
-                                      : task.priority === 'Medium'
-                                        ? 'rgba(217, 119, 6, 0.12)'
-                                        : 'rgba(22, 163, 74, 0.12)',
-                                  color:
-                                    task.priority === 'High'
-                                      ? '#b91c1c'
-                                      : task.priority === 'Medium'
-                                        ? '#b45309'
-                                        : '#15803d'
-                                }}
-                              >
-                                {task.priority}
-                              </span>
-                              <span style={styles.assignee}>
-                                <UserIcon /> {task.assignee}
-                              </span>
-                            </div>
-                          </div>
-                        ))}
-                    </div>
-
-                    <button style={styles.addTaskColBtn} onClick={() => handleOpenCreateModal(status)}>
-                      <PlusIcon /> Add Task Card
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <div style={styles.emptyState} className="glass-panel">
-              <h2>No Active Board</h2>
-              <p>Create a board in the sidebar to get started.</p>
-            </div>
-          )}
-        </main>
-
-        <ActivityLog logs={activityLogs} />
+    <div style={styles.dashboard}>
+      {/* Sidebar */}
+      <div style={styles.sidebar}>
+        <Sidebar
+          boards={boards}
+          activeBoardId={activeBoardId}
+          onSelectBoard={handleBoardSelect}
+          onCreateBoard={handleBoardCreated}
+          onDeleteBoard={handleBoardDelete}
+        />
       </div>
 
-      {showCreateModal && (
+      {/* Main Content */}
+      <div style={styles.main}>
+        <div style={styles.header}>
+          <div>
+            <h2 style={styles.boardTitle}>
+              {currentBoard?.name || 'Select a board'}
+            </h2>
+            {isOffline && (
+              <span style={styles.offlineBadge}>📡 Offline Mode</span>
+            )}
+          </div>
+          <button
+            className="btn-primary"
+            onClick={() => setIsCreateModalOpen(true)}
+            disabled={!activeBoardId}
+            style={styles.addButton}
+          >
+            + Add Task
+          </button>
+        </div>
+
+        {/* Kanban Columns */}
+        <div style={styles.columns}>
+          {['Not Started', 'Doing', 'Done'].map(status => (
+            <div key={status} style={styles.column}>
+              <div style={styles.columnHeader}>
+                <h4 style={styles.columnTitle}>{status}</h4>
+                <span style={styles.taskCount}>
+                  {tasks.filter(task => task.status === status).length}
+                </span>
+              </div>
+              <div style={styles.taskList}>
+                {tasks
+                  .filter(task => task.status === status)
+                  .map(task => (
+                    <div
+                      key={task._id}
+                      style={styles.taskCard}
+                      onClick={() => setSelectedTask(task)}
+                    >
+                      <div style={styles.taskHeader}>
+                        <h5 style={styles.taskTitle}>{task.title}</h5>
+                        {task.priority && (
+                          <span style={{
+                            ...styles.priorityBadge,
+                            backgroundColor: task.priority === 'High' ? '#ef4444' :
+                                            task.priority === 'Medium' ? '#f59e0b' :
+                                            '#10b981'
+                          }}>
+                            {task.priority}
+                          </span>
+                        )}
+                      </div>
+                      {task.description && (
+                        <p style={styles.taskDescription}>
+                          {task.description.substring(0, 60)}
+                          {task.description.length > 60 && '...'}
+                        </p>
+                      )}
+                      <div style={styles.taskFooter}>
+                        <span style={styles.taskAssignee}>
+                          {task.assignee?.name || 'Unassigned'}
+                        </span>
+                        <span style={styles.taskDate}>
+                          {new Date(task.updatedAt).toLocaleDateString()}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                {isLoading && (
+                  <p style={styles.loading}>Loading tasks...</p>
+                )}
+                {!isLoading && tasks.filter(t => t.status === status).length === 0 && (
+                  <p style={styles.empty}>No tasks</p>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Activity Log */}
+      <div style={styles.activity}>
+        <ActivityLog logs={[]} />
+      </div>
+
+      {/* Modals */}
+      {isCreateModalOpen && (
         <CreateTaskModal
-          onClose={() => setShowCreateModal(false)}
-          onSave={handleSaveTask}
+          boardId={activeBoardId}
+          onClose={() => setIsCreateModalOpen(false)}
+          onTaskCreated={handleTaskCreated}
+        />
+      )}
+
+      {selectedTask && (
+        <TaskDetailModal
+          task={selectedTask}
+          onClose={() => setSelectedTask(null)}
+          onSave={handleTaskUpdate}
+          onDelete={handleTaskDelete}
+        />
+      )}
+
+      {conflictData && (
+        <ConflictModal
+          isOpen={true}
+          onClose={() => setConflictData(null)}
+          clientData={conflictData.clientData}
+          serverData={conflictData.serverData}
+          onResolve={handleConflictResolve}
         />
       )}
     </div>
   );
 };
 
+// Styles
 const styles = {
-  dashboardContainer: {
+  dashboard: {
     display: 'flex',
-    flexDirection: 'column',
-    minHeight: '100vh',
-    padding: '108px 16px 16px',
-    gap: '14px'
-  },
-  navbar: {
-    position: 'fixed',
-    top: '16px',
-    left: '16px',
-    right: '16px',
-    zIndex: 100,
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: '16px',
-    padding: '16px 24px',
-    borderRadius: '24px',
-    minHeight: '76px'
-  },
-  brandArea: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '14px'
-  },
-  logo: {
-    fontSize: '1.8rem',
-    lineHeight: 1
-  },
-  navSubtitle: {
-    fontSize: '0.82rem',
-    color: 'var(--text-muted)',
-    marginTop: '4px'
-  },
-  navBadge: {
-    padding: '7px 10px',
-    borderRadius: '999px',
-    border: '1px solid var(--line)',
-    background: 'rgba(255, 255, 255, 0.7)',
-    color: 'var(--text-muted)',
-    fontSize: '0.78rem',
-    fontWeight: 700,
-    whiteSpace: 'nowrap'
-  },
-  navActions: {
-    display: 'flex',
-    alignItems: 'center'
-  },
-  mainLayout: {
-    display: 'flex',
-    flex: 1,
-    gap: '18px',
+    height: '100vh',
+    background: 'var(--bg-primary)',
+    gap: '20px',
+    padding: '20px',
     overflow: 'hidden'
   },
   sidebar: {
-    width: '290px',
-    padding: '18px',
-    overflow: 'hidden'
+    width: '280px',
+    background: 'var(--glass-bg)',
+    borderRadius: '12px',
+    padding: '20px',
+    backdropFilter: 'blur(10px)',
+    border: '1px solid var(--glass-border)',
+    flexShrink: 0,
+    overflowY: 'auto'
   },
-  boardArea: {
+  main: {
     flex: 1,
-    overflowY: 'auto',
-    paddingRight: '6px'
-  },
-  boardHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'end',
-    marginBottom: '18px'
-  },
-  boardTitle: {
-    fontSize: '2rem',
-    marginBottom: '6px'
-  },
-  boardMeta: {
-    color: 'var(--text-muted)'
-  },
-  boardCount: {
-    padding: '8px 12px',
-    borderRadius: '999px',
-    background: 'rgba(37, 99, 235, 0.08)',
-    color: 'var(--color-primary)',
-    fontSize: '0.85rem',
-    fontWeight: 700
-  },
-  columnsGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
-    gap: '18px'
-  },
-  column: {
-    padding: '18px',
-    minHeight: '560px',
     display: 'flex',
     flexDirection: 'column',
-    background: 'rgba(255,255,255,0.88)'
+    gap: '20px',
+    minWidth: 0,
+    overflow: 'hidden'
   },
-  columnHeaderContainer: {
+  header: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '20px 25px',
+    background: 'var(--glass-bg)',
+    borderRadius: '12px',
+    border: '1px solid var(--glass-border)',
+    flexShrink: 0
+  },
+  boardTitle: {
+    margin: 0,
+    fontSize: '1.4rem',
+    color: 'var(--text-primary)'
+  },
+  offlineBadge: {
+    fontSize: '0.75rem',
+    background: '#f59e0b',
+    color: '#fff',
+    padding: '2px 10px',
+    borderRadius: '12px',
+    marginLeft: '10px'
+  },
+  addButton: {
+    padding: '10px 20px',
+    fontSize: '0.9rem'
+  },
+  columns: {
+    display: 'flex',
+    gap: '20px',
+    flex: 1,
+    minHeight: 0
+  },
+  column: {
+    flex: 1,
+    background: 'var(--glass-bg)',
+    borderRadius: '12px',
+    padding: '15px',
+    border: '1px solid var(--glass-border)',
+    display: 'flex',
+    flexDirection: 'column',
+    minWidth: 0
+  },
+  columnHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '12px',
+    paddingBottom: '10px',
+    borderBottom: '1px solid var(--glass-border)'
+  },
+  columnTitle: {
+    margin: 0,
+    fontSize: '0.95rem',
+    color: 'var(--text-primary)',
+    fontWeight: '600'
+  },
+  taskCount: {
+    fontSize: '0.8rem',
+    color: 'var(--text-muted)',
+    background: 'rgba(0,0,0,0.1)',
+    padding: '2px 10px',
+    borderRadius: '12px'
+  },
+  taskList: {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+    overflowY: 'auto',
+    paddingRight: '5px'
+  },
+  taskCard: {
+    background: 'var(--bg-primary)',
+    padding: '12px 14px',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    border: '1px solid var(--glass-border)',
+    transition: 'all 0.2s ease',
+    ':hover': {
+      borderColor: 'var(--color-primary)',
+      transform: 'translateY(-2px)',
+      boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+    }
+  },
+  taskHeader: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: '14px',
-    paddingBottom: '12px',
-    borderBottom: '1px solid var(--line)'
-  },
-  columnHeader: {
-    fontSize: '1.15rem',
-    marginBottom: '4px'
-  },
-  columnSubheader: {
-    fontSize: '0.82rem',
-    color: 'var(--text-muted)'
-  },
-  addTaskInlineBtn: {
-    background: '#fff',
-    border: '1px solid var(--line)',
-    color: 'var(--color-primary)',
-    width: '34px',
-    height: '34px',
-    padding: 0,
-    borderRadius: '50%',
-    display: 'grid',
-    placeItems: 'center'
-  },
-  taskList: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '14px',
-    flex: 1,
-    overflowY: 'auto'
-  },
-  taskCard: {
-    padding: '16px',
-    background: '#fff',
-    borderRadius: '18px',
-    cursor: 'grab',
-    border: '1px solid var(--line)',
-    boxShadow: '0 8px 18px rgba(35, 42, 52, 0.05)'
+    gap: '8px'
   },
   taskTitle: {
-    fontSize: '1rem',
-    marginBottom: '8px'
+    margin: 0,
+    fontSize: '0.9rem',
+    color: 'var(--text-primary)',
+    fontWeight: '500',
+    flex: 1
+  },
+  priorityBadge: {
+    fontSize: '0.65rem',
+    padding: '2px 8px',
+    borderRadius: '12px',
+    color: '#fff',
+    fontWeight: '600',
+    flexShrink: 0
   },
   taskDescription: {
-    fontSize: '0.85rem',
+    fontSize: '0.8rem',
     color: 'var(--text-muted)',
-    marginBottom: '12px'
+    margin: '6px 0 8px 0',
+    lineHeight: '1.3'
   },
-  taskMetaRow: {
+  taskFooter: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    gap: '10px'
-  },
-  priorityTag: {
-    fontSize: '0.75rem',
-    padding: '4px 8px',
-    borderRadius: '999px',
-    fontWeight: 700
-  },
-  assignee: {
-    fontSize: '0.8rem',
+    fontSize: '0.7rem',
     color: 'var(--text-muted)',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '4px'
+    marginTop: '4px'
   },
-  addTaskColBtn: {
-    width: '100%',
-    background: 'rgba(37, 99, 235, 0.04)',
-    border: '1px dashed rgba(37, 99, 235, 0.24)',
-    color: 'var(--color-primary)',
-    padding: '12px',
-    marginTop: '15px',
-    fontSize: '0.9rem',
-    borderRadius: '999px',
-    cursor: 'pointer',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: '8px'
+  taskAssignee: {
+    background: 'rgba(0,0,0,0.05)',
+    padding: '2px 8px',
+    borderRadius: '4px'
   },
-  emptyState: {
+  taskDate: {
+    fontSize: '0.7rem'
+  },
+  loading: {
     textAlign: 'center',
-    marginTop: '100px',
-    padding: '60px 20px'
+    color: 'var(--text-muted)',
+    fontSize: '0.85rem',
+    padding: '20px 0'
+  },
+  empty: {
+    textAlign: 'center',
+    color: 'var(--text-muted)',
+    fontSize: '0.85rem',
+    padding: '20px 0'
+  },
+  activity: {
+    width: '280px',
+    background: 'var(--glass-bg)',
+    borderRadius: '12px',
+    padding: '20px',
+    border: '1px solid var(--glass-border)',
+    flexShrink: 0,
+    overflowY: 'auto'
   }
 };
 
