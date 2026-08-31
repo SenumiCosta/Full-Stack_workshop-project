@@ -29,7 +29,7 @@ const CreateTaskModal = ({ onClose, onSave }) => {
         className="glass-panel"
         style={styles.modal}
       >
-        <h3 style={styles.title}>Add New Task</h3>
+        <h3 style={styles.title}>Create Task</h3>
         <p style={styles.subtitle}>Create a task card for the selected board.</p>
 
         <div style={styles.inputGroup}>
