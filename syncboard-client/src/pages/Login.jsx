@@ -13,7 +13,6 @@ const Login = () => {
   const handleLogin = async (e) => {
     e.preventDefault();
 
-    // Validate fields
     if (!email || !password) {
       setError('Please fill in all fields.');
       return;
@@ -23,7 +22,6 @@ const Login = () => {
       setError('');
       setLoading(true);
 
-      // Send login request to backend
       const response = await api.post('/auth/login', {
         email,
         password
@@ -31,34 +29,26 @@ const Login = () => {
 
       console.log('Login response:', response.data);
 
-      // Get JWT token from backend
       const token = response.data.token;
-
-      // Get user details from backend
       const user = response.data.user;
 
-      // Check if token exists
       if (!token) {
         setError('Login failed. No authentication token received.');
         return;
       }
 
-      // Save JWT token
       localStorage.setItem('syncboard_token', token);
 
-      // Save user information
       localStorage.setItem(
         'syncboard_user',
         JSON.stringify(user)
       );
 
-      // Save authentication status
       localStorage.setItem('syncboard_auth', 'true');
 
       console.log('Token saved successfully');
       console.log('User:', user);
 
-      // Navigate to dashboard
       navigate('/dashboard');
 
     } catch (error) {
@@ -68,6 +58,7 @@ const Login = () => {
         error.response?.data?.message ||
         'Invalid email or password.'
       );
+
     } finally {
       setLoading(false);
     }
@@ -92,42 +83,48 @@ const Login = () => {
 
         <form onSubmit={handleLogin} style={styles.form}>
 
-          {/* Error Message */}
           {error && (
             <div style={styles.error}>
               {error}
             </div>
           )}
 
-          {/* Email */}
           <div style={styles.inputGroup}>
-            <label style={styles.label}>
+            <label
+              htmlFor="email"
+              style={styles.label}
+            >
               Email Address
             </label>
 
             <input
+              id="email"
               type="email"
               placeholder="name@email.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              required
             />
           </div>
 
-          {/* Password */}
           <div style={styles.inputGroup}>
-            <label style={styles.label}>
+            <label
+              htmlFor="password"
+              style={styles.label}
+            >
               Password
             </label>
 
             <input
+              id="password"
               type="password"
               placeholder="••••••••"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              required
             />
           </div>
 
-          {/* Login Button */}
           <button
             type="submit"
             className="btn-primary"
@@ -215,3 +212,4 @@ const styles = {
 };
 
 export default Login;
+
