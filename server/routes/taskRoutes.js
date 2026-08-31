@@ -1,25 +1,26 @@
 const express = require('express');
-
+const { protect } = require('../middleware/authMiddleware');
 const {
   getTasks,
-  getTask,
   createTask,
   updateTask,
-  deleteTask
+  deleteTask,
+  moveTask
 } = require('../controllers/taskController');
 
-const { protect } = require('../middleware/authMiddleware');
+const router = express.Router({ mergeParams: true });
 
-const router = express.Router();
+router.use(protect);
 
-// /api/boards/:boardId/tasks
 router.route('/')
-  .get(protect, getTasks)
-  .post(protect, createTask);
+  .get(getTasks)
+  .post(createTask);
 
 router.route('/:id')
-  .get(protect, getTask)
-  .put(protect, updateTask)
-  .delete(protect, deleteTask);
+  .put(updateTask)
+  .delete(deleteTask);
+
+router.route('/:id/move')
+  .put(moveTask);
 
 module.exports = router;
