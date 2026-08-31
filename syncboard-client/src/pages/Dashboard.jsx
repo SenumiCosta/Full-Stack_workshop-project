@@ -4,9 +4,7 @@ import { useSocket } from '../context/SocketContext';
 import api from '../api/apiClient';
 import Sidebar from '../components/Sidebar/Sidebar';
 import ActivityLog from '../components/Common/ActivityLog';
-import CreateTaskModal from '../components/modals/CreateTaskModal';
-import TaskDetailModal from '../components/modals/TaskDetailModal';
-import ConflictModal from '../components/modals/ConflictModal';
+import CreateTaskModal from "../components/modals/CreateTaskModal";
 
 const Dashboard = () => {
   const [boards, setBoards] = useState([]);

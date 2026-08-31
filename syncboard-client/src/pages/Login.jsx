@@ -12,65 +12,33 @@ const Login = () => {
 
   const handleLogin = async (e) => {
     e.preventDefault();
-
-    if (!email || !password) {
-      setError('Please fill in all fields.');
-      return;
-    }
+    setError('');
 
     try {
-      setError('');
-      setLoading(true);
-
-      const response = await api.post('/auth/login', {
+      const res = await api.post('/auth/login', {
         email,
         password
       });
 
-      console.log('Login response:', response.data);
-
-      const token = response.data.token;
-      const user = response.data.user;
-
-      if (!token) {
-        setError('Login failed. No authentication token received.');
-        return;
-      }
-
-      localStorage.setItem('syncboard_token', token);
+      localStorage.setItem('syncboard_token', res.data.token);
 
       localStorage.setItem(
         'syncboard_user',
-        JSON.stringify(user)
+        JSON.stringify(res.data.user)
       );
-
-      localStorage.setItem('syncboard_auth', 'true');
-
-      console.log('Token saved successfully');
-      console.log('User:', user);
 
       navigate('/dashboard');
-
-    } catch (error) {
-      console.error('Login failed:', error);
-
+    } catch (err) {
       setError(
-        error.response?.data?.message ||
-        'Invalid email or password.'
+        err.response?.data?.message || 'Login failed'
       );
-
-    } finally {
-      setLoading(false);
     }
   };
 
   return (
     <div style={styles.container}>
       <div className="glass-panel" style={styles.card}>
-
-        <h1 style={styles.logo}>
-          SyncBoard
-        </h1>
+        <h1 style={styles.logo}>SyncBoard</h1>
 
         <p
           style={{
@@ -90,10 +58,7 @@ const Login = () => {
           )}
 
           <div style={styles.inputGroup}>
-            <label
-              htmlFor="email"
-              style={styles.label}
-            >
+            <label htmlFor="email" style={styles.label}>
               Email Address
             </label>
 
@@ -108,10 +73,7 @@ const Login = () => {
           </div>
 
           <div style={styles.inputGroup}>
-            <label
-              htmlFor="password"
-              style={styles.label}
-            >
+            <label htmlFor="password" style={styles.label}>
               Password
             </label>
 
@@ -129,9 +91,8 @@ const Login = () => {
             type="submit"
             className="btn-primary"
             style={styles.button}
-            disabled={loading}
           >
-            {loading ? 'Signing In...' : 'Sign In'}
+            Sign In
           </button>
 
         </form>
@@ -143,12 +104,9 @@ const Login = () => {
           }}
         >
           Don't have an account?{' '}
-
           <Link
             to="/signup"
-            style={{
-              color: 'var(--color-primary)'
-            }}
+            style={{ color: 'var(--color-primary)' }}
           >
             Sign Up
           </Link>
