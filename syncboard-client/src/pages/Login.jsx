@@ -6,6 +6,8 @@ const Login = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
   const navigate = useNavigate();
 
   const handleLogin = async (e) => {
@@ -48,7 +50,12 @@ const Login = () => {
         </p>
 
         <form onSubmit={handleLogin} style={styles.form}>
-          {error && <div style={styles.error}>{error}</div>}
+
+          {error && (
+            <div style={styles.error}>
+              {error}
+            </div>
+          )}
 
           <div style={styles.inputGroup}>
             <label htmlFor="email" style={styles.label}>
@@ -61,7 +68,7 @@ const Login = () => {
               placeholder="name@email.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              required
+              
             />
           </div>
 
@@ -76,7 +83,7 @@ const Login = () => {
               placeholder="••••••••"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              required
+              
             />
           </div>
 
@@ -87,6 +94,7 @@ const Login = () => {
           >
             Sign In
           </button>
+
         </form>
 
         <p
@@ -103,6 +111,7 @@ const Login = () => {
             Sign Up
           </Link>
         </p>
+
       </div>
     </div>
   );
