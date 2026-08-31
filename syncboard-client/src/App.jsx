@@ -1,40 +1,53 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { BoardProvider } from './context/BoardContext';
+import { CacheProvider } from './context/CacheContext';
+
 import Login from './pages/Login';
 import SignUp from './pages/SignUp';
 import Dashboard from './pages/Dashboard';
 
-// Route protector to make sure user logs in first
+// Route protector
 const ProtectedRoute = ({ children }) => {
-  const isAuthenticated = localStorage.getItem('syncboard_auth') === 'true';
-  return isAuthenticated ? children : <Navigate to="/login" replace />;
+  const isAuthenticated =
+    localStorage.getItem('syncboard_auth') === 'true';
+
+  return isAuthenticated
+    ? children
+    : <Navigate to="/login" replace />;
 };
 
 function App() {
   return (
-    <BoardProvider>
-      <BrowserRouter>
-        <Routes>
-          {/* Public Authentication Screens */}
-          <Route path="/login" element={<Login />} />
-          <Route path="/signup" element={<SignUp />} />
+    <CacheProvider>
+      <BoardProvider>
+        <BrowserRouter>
+          <Routes>
 
-          {/* Protected Main Application Dashboard */}
-          <Route 
-            path="/dashboard" 
-            element={
-              <ProtectedRoute>
-                <Dashboard />
-              </ProtectedRoute>
-            } 
-          />
+            {/* Public routes */}
+            <Route path="/login" element={<Login />} />
+            <Route path="/signup" element={<SignUp />} />
 
-          {/* Default redirect to Dashboard, which will handle login checks */}
-          <Route path="*" element={<Navigate to="/dashboard" replace />} />
-        </Routes>
-      </BrowserRouter>
-    </BoardProvider>
+            {/* Protected dashboard */}
+            <Route
+              path="/dashboard"
+              element={
+                <ProtectedRoute>
+                  <Dashboard />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* Default route */}
+            <Route
+              path="*"
+              element={<Navigate to="/dashboard" replace />}
+            />
+
+          </Routes>
+        </BrowserRouter>
+      </BoardProvider>
+    </CacheProvider>
   );
 }
 
