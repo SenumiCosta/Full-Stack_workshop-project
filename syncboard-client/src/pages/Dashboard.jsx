@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useCache } from '../context/CacheContext';
+import { useSocket } from '../context/SocketContext';
 import api from '../api/apiClient';
 import Sidebar from '../components/Sidebar/Sidebar';
 import ActivityLog from '../components/Common/ActivityLog';
-import CreateTaskModal from '../components/Modals/CreateTaskModal';
-import TaskDetailModal from '../components/Modals/TaskDetailModal';
-import ConflictModal from '../components/Modals/ConflictModal';
+import CreateTaskModal from '../components/modals/CreateTaskModal';
+import TaskDetailModal from '../components/modals/TaskDetailModal';
+import ConflictModal from '../components/modals/ConflictModal';
 
 const Dashboard = () => {
   const [boards, setBoards] = useState([]);
@@ -17,13 +18,24 @@ const Dashboard = () => {
   const [conflictData, setConflictData] = useState(null);
 
   const { taskCache, boardCache, isOffline, setLastSync } = useCache();
+  const { socket, isConnected, connect, joinBoard, on, off } = useSocket();
+  const token = localStorage.getItem('syncboard_token');
 
-  // Load boards on mount
+  useEffect(() => {
+    if (token && !socket) {
+      connect(token);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    if (activeBoardId && isConnected) {
+      joinBoard(activeBoardId);
+    }
+  }, [activeBoardId, isConnected]);
+
   useEffect(() => {
     const loadBoards = async () => {
       setIsLoading(true);
-      
-      // Load from cache first
       const cachedBoards = boardCache.getAll();
       if (cachedBoards && cachedBoards.length > 0) {
         setBoards(cachedBoards);
@@ -31,8 +43,6 @@ const Dashboard = () => {
           setActiveBoardId(cachedBoards[0]._id);
         }
       }
-
-      // If online, fetch from API
       if (!isOffline) {
         try {
           const res = await api.get('/boards');
@@ -40,7 +50,6 @@ const Dashboard = () => {
           setBoards(freshBoards);
           boardCache.saveAll(freshBoards);
           setLastSync();
-          
           if (!activeBoardId && freshBoards.length > 0) {
             setActiveBoardId(freshBoards[0]._id);
           }
@@ -50,24 +59,17 @@ const Dashboard = () => {
       }
       setIsLoading(false);
     };
-
     loadBoards();
   }, []);
 
-  // Load tasks when active board changes
   useEffect(() => {
     if (!activeBoardId) return;
-
     const loadTasks = async () => {
       setIsLoading(true);
-
-      // Load from cache first
       const cachedTasks = taskCache.getByBoard(activeBoardId);
       if (cachedTasks && cachedTasks.length > 0) {
         setTasks(cachedTasks);
       }
-
-      // If online, fetch from API
       if (!isOffline) {
         try {
           const res = await api.get(`/boards/${activeBoardId}/tasks`);
@@ -81,13 +83,44 @@ const Dashboard = () => {
       }
       setIsLoading(false);
     };
-
     loadTasks();
   }, [activeBoardId]);
 
-  // Handle task creation
-  const handleTaskCreated = async (newTask) => {
-    // Optimistic update
+  useEffect(() => {
+    if (!socket || !activeBoardId) return;
+    const handleTaskCreated = (newTask) => {
+      console.log('📝 Task created:', newTask);
+      setTasks(prev => {
+        if (prev.some(t => t._id === newTask._id)) return prev;
+        return [...prev, newTask];
+      });
+      taskCache.add(activeBoardId, newTask);
+    };
+    const handleTaskUpdated = (updatedTask) => {
+      console.log('🔄 Task updated:', updatedTask);
+      setTasks(prev => {
+        const exists = prev.some(t => t._id === updatedTask._id);
+        if (!exists) return [...prev, updatedTask];
+        return prev.map(t => t._id === updatedTask._id ? updatedTask : t);
+      });
+      taskCache.update(activeBoardId, updatedTask._id, updatedTask);
+    };
+    const handleTaskDeleted = (taskId) => {
+      console.log('🗑️ Task deleted:', taskId);
+      setTasks(prev => prev.filter(t => t._id !== taskId));
+      taskCache.remove(activeBoardId, taskId);
+    };
+    on('task-created', handleTaskCreated);
+    on('task-updated', handleTaskUpdated);
+    on('task-deleted', handleTaskDeleted);
+    return () => {
+      off('task-created', handleTaskCreated);
+      off('task-updated', handleTaskUpdated);
+      off('task-deleted', handleTaskDeleted);
+    };
+  }, [socket, activeBoardId, on, off]);
+
+  const handleTaskCreatedLocal = async (newTask) => {
     const tempTask = {
       ...newTask,
       _id: `temp_${Date.now()}`,
@@ -95,25 +128,19 @@ const Dashboard = () => {
     };
     setTasks([...tasks, tempTask]);
     taskCache.add(activeBoardId, tempTask);
-
     if (isOffline) {
       alert('Task saved offline. Will sync when online.');
       return;
     }
-
     try {
       const res = await api.post(`/boards/${activeBoardId}/tasks`, newTask);
       const createdTask = res.data.data || res.data;
-      
-      const updatedTasks = tasks
-        .filter(t => t._id !== tempTask._id)
-        .concat(createdTask);
+      const updatedTasks = tasks.filter(t => t._id !== tempTask._id).concat(createdTask);
       setTasks(updatedTasks);
       taskCache.saveByBoard(activeBoardId, updatedTasks);
       setLastSync();
     } catch (err) {
       console.error('Failed to create task:', err);
-      // Revert optimistic update
       const updatedTasks = tasks.filter(t => t._id !== tempTask._id);
       setTasks(updatedTasks);
       taskCache.saveByBoard(activeBoardId, updatedTasks);
@@ -121,50 +148,31 @@ const Dashboard = () => {
     }
   };
 
-  // Handle task update (with conflict detection)
   const handleTaskUpdate = async (taskId, updates) => {
     const oldTask = tasks.find(t => t._id === taskId);
     if (!oldTask) return;
-
-    // Optimistic update
-    const updatedTasks = tasks.map(t =>
-      t._id === taskId ? { ...t, ...updates } : t
-    );
+    const updatedTasks = tasks.map(t => t._id === taskId ? { ...t, ...updates } : t);
     setTasks(updatedTasks);
     taskCache.saveByBoard(activeBoardId, updatedTasks);
-
     if (isOffline) {
       alert('Task updated offline. Will sync when online.');
       return;
     }
-
     try {
-      // Add client timestamp for conflict detection
-      const updatesWithTimestamp = {
-        ...updates,
-        _clientUpdatedAt: oldTask.updatedAt
-      };
-
+      const updatesWithTimestamp = { ...updates, _clientUpdatedAt: oldTask.updatedAt };
       const res = await api.put(`/tasks/${taskId}`, updatesWithTimestamp);
-      
-      // Success - update UI with server response
-      const finalTasks = tasks.map(t =>
-        t._id === taskId ? res.data.data : t
-      );
+      const finalTasks = tasks.map(t => t._id === taskId ? res.data.data : t);
       setTasks(finalTasks);
       taskCache.saveByBoard(activeBoardId, finalTasks);
       setLastSync();
-      
     } catch (err) {
       if (err.isConflict) {
-        // Show conflict modal
         setConflictData({
           clientData: { ...oldTask, ...updates },
           serverData: err.serverData
         });
       } else {
         console.error('Failed to update task:', err);
-        // Revert optimistic update
         setTasks(tasks);
         taskCache.saveByBoard(activeBoardId, tasks);
         alert('Failed to update task. Please try again.');
@@ -172,147 +180,64 @@ const Dashboard = () => {
     }
   };
 
-  // Handle conflict resolution
   const handleConflictResolve = async (mergedData) => {
     try {
       const res = await api.put(`/tasks/${mergedData._id}`, mergedData);
-      
-      const finalTasks = tasks.map(t =>
-        t._id === mergedData._id ? res.data.data : t
-      );
+      const finalTasks = tasks.map(t => t._id === mergedData._id ? res.data.data : t);
       setTasks(finalTasks);
       taskCache.saveByBoard(activeBoardId, finalTasks);
       setLastSync();
       setConflictData(null);
-      
     } catch (err) {
       console.error('Failed to resolve conflict:', err);
       alert('Failed to resolve conflict. Please try again.');
     }
   };
 
-  // Handle task deletion
   const handleTaskDelete = async (taskId) => {
     if (!confirm('Are you sure you want to delete this task?')) return;
-
-    // Optimistic update
     const updatedTasks = tasks.filter(t => t._id !== taskId);
     setTasks(updatedTasks);
     taskCache.saveByBoard(activeBoardId, updatedTasks);
-
     if (isOffline) {
       alert('Task deleted offline. Will sync when online.');
       return;
     }
-
     try {
       await api.delete(`/tasks/${taskId}`);
       setLastSync();
     } catch (err) {
       console.error('Failed to delete task:', err);
-      // Restore task on error
       setTasks(tasks);
       taskCache.saveByBoard(activeBoardId, tasks);
       alert('Failed to delete task. Please try again.');
     }
   };
 
-  // Handle board selection
   const handleBoardSelect = (boardId) => {
     setActiveBoardId(boardId);
   };
 
-  // Handle board creation
-  const handleBoardCreated = async (boardName) => {
-    const tempBoard = {
-      _id: `temp_${Date.now()}`,
-      name: boardName,
-      createdAt: new Date().toISOString()
-    };
-
-    setBoards([...boards, tempBoard]);
-    boardCache.add(tempBoard);
-
-    if (isOffline) {
-      alert('Board created offline. Will sync when online.');
-      return;
-    }
-
-    try {
-      const res = await api.post('/boards', { name: boardName });
-      const newBoard = res.data.data || res.data;
-      
-      const updatedBoards = boards
-        .filter(b => b._id !== tempBoard._id)
-        .concat(newBoard);
-      setBoards(updatedBoards);
-      boardCache.saveAll(updatedBoards);
-      setActiveBoardId(newBoard._id);
-      setLastSync();
-    } catch (err) {
-      console.error('Failed to create board:', err);
-      const updatedBoards = boards.filter(b => b._id !== tempBoard._id);
-      setBoards(updatedBoards);
-      boardCache.saveAll(updatedBoards);
-      alert('Failed to create board. Please try again.');
-    }
-  };
-
-  // Handle board deletion
-  const handleBoardDelete = async (boardId) => {
-    if (!confirm('Are you sure you want to delete this board?')) return;
-
-    const updatedBoards = boards.filter(b => b._id !== boardId);
-    setBoards(updatedBoards);
-    boardCache.saveAll(updatedBoards);
-
-    if (activeBoardId === boardId && updatedBoards.length > 0) {
-      setActiveBoardId(updatedBoards[0]._id);
-    }
-
-    if (isOffline) {
-      alert('Board deleted offline. Will sync when online.');
-      return;
-    }
-
-    try {
-      await api.delete(`/boards/${boardId}`);
-      setLastSync();
-    } catch (err) {
-      console.error('Failed to delete board:', err);
-      const restored = await api.get('/boards');
-      const freshBoards = restored.data.data || restored.data;
-      setBoards(freshBoards);
-      boardCache.saveAll(freshBoards);
-      alert('Failed to delete board. Please try again.');
-    }
-  };
-
-  // Get current board name
   const currentBoard = boards.find(b => b._id === activeBoardId);
 
   return (
     <div style={styles.dashboard}>
-      {/* Sidebar */}
       <div style={styles.sidebar}>
         <Sidebar
           boards={boards}
           activeBoardId={activeBoardId}
           onSelectBoard={handleBoardSelect}
-          onCreateBoard={handleBoardCreated}
-          onDeleteBoard={handleBoardDelete}
         />
       </div>
-
-      {/* Main Content */}
       <div style={styles.main}>
         <div style={styles.header}>
           <div>
-            <h2 style={styles.boardTitle}>
-              {currentBoard?.name || 'Select a board'}
-            </h2>
-            {isOffline && (
-              <span style={styles.offlineBadge}>📡 Offline Mode</span>
+            <h2 style={styles.boardTitle}>{currentBoard?.name || 'Select a board'}</h2>
+            {isOffline && <span style={styles.offlineBadge}>📡 Offline Mode</span>}
+            {isConnected ? (
+              <span style={styles.onlineBadge}>🟢 Live</span>
+            ) : (
+              <span style={styles.offlineBadge}>🔴 Disconnected</span>
             )}
           </div>
           <button
@@ -324,8 +249,6 @@ const Dashboard = () => {
             + Add Task
           </button>
         </div>
-
-        {/* Kanban Columns */}
         <div style={styles.columns}>
           {['Not Started', 'Doing', 'Done'].map(status => (
             <div key={status} style={styles.column}>
@@ -373,9 +296,7 @@ const Dashboard = () => {
                       </div>
                     </div>
                   ))}
-                {isLoading && (
-                  <p style={styles.loading}>Loading tasks...</p>
-                )}
+                {isLoading && <p style={styles.loading}>Loading tasks...</p>}
                 {!isLoading && tasks.filter(t => t.status === status).length === 0 && (
                   <p style={styles.empty}>No tasks</p>
                 )}
@@ -384,21 +305,16 @@ const Dashboard = () => {
           ))}
         </div>
       </div>
-
-      {/* Activity Log */}
       <div style={styles.activity}>
         <ActivityLog logs={[]} />
       </div>
-
-      {/* Modals */}
       {isCreateModalOpen && (
         <CreateTaskModal
           boardId={activeBoardId}
           onClose={() => setIsCreateModalOpen(false)}
-          onTaskCreated={handleTaskCreated}
+          onTaskCreated={handleTaskCreatedLocal}
         />
       )}
-
       {selectedTask && (
         <TaskDetailModal
           task={selectedTask}
@@ -407,7 +323,6 @@ const Dashboard = () => {
           onDelete={handleTaskDelete}
         />
       )}
-
       {conflictData && (
         <ConflictModal
           isOpen={true}
@@ -421,7 +336,6 @@ const Dashboard = () => {
   );
 };
 
-// Styles
 const styles = {
   dashboard: {
     display: 'flex',
@@ -466,7 +380,15 @@ const styles = {
   },
   offlineBadge: {
     fontSize: '0.75rem',
-    background: '#f59e0b',
+    background: '#ef4444',
+    color: '#fff',
+    padding: '2px 10px',
+    borderRadius: '12px',
+    marginLeft: '10px'
+  },
+  onlineBadge: {
+    fontSize: '0.75rem',
+    background: '#10b981',
     color: '#fff',
     padding: '2px 10px',
     borderRadius: '12px',

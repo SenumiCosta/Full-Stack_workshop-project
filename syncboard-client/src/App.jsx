@@ -1,52 +1,40 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { BoardProvider } from './context/BoardContext';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { CacheProvider } from './context/CacheContext';
-
+import { SocketProvider } from './context/SocketContext';
 import Login from './pages/Login';
 import SignUp from './pages/SignUp';
 import Dashboard from './pages/Dashboard';
-
-// Route protector
-const ProtectedRoute = ({ children }) => {
-  const isAuthenticated =
-    localStorage.getItem('syncboard_auth') === 'true';
-
-  return isAuthenticated
-    ? children
-    : <Navigate to="/login" replace />;
-};
+import './index.css';
 
 function App() {
+  const isAuthenticated = () => {
+    return !!localStorage.getItem('syncboard_token');
+  };
+
+  const PrivateRoute = ({ children }) => {
+    return isAuthenticated() ? children : <Navigate to="/login" />;
+  };
+
   return (
     <CacheProvider>
-      <BoardProvider>
-        <BrowserRouter>
+      <SocketProvider>
+        <Router>
           <Routes>
-
-            {/* Public routes */}
             <Route path="/login" element={<Login />} />
             <Route path="/signup" element={<SignUp />} />
-
-            {/* Protected dashboard */}
             <Route
               path="/dashboard"
               element={
-                <ProtectedRoute>
+                <PrivateRoute>
                   <Dashboard />
-                </ProtectedRoute>
+                </PrivateRoute>
               }
             />
-
-            {/* Default route */}
-            <Route
-              path="*"
-              element={<Navigate to="/dashboard" replace />}
-            />
-
+            <Route path="/" element={<Navigate to="/dashboard" />} />
           </Routes>
-        </BrowserRouter>
-      </BoardProvider>
+        </Router>
+      </SocketProvider>
     </CacheProvider>
   );
 }
