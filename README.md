@@ -15,7 +15,7 @@ SyncBoard is a full-stack, real-time Kanban-style team collaboration platform bu
 
 | Layer | Technologies |
 | :--- | :--- |
-| **Frontend** | React 18, Vite, React Router v7, Lucide Icons, Axios |
+| **Frontend** | React 19, Vite, React Router v7, Lucide Icons, Axios |
 | **Backend** | Node.js, Express.js, REST API, JWT Authentication, Nodemailer |
 | **Database** | MongoDB, Mongoose ODM |
 | **Real-Time** | WebSockets (Socket.io) |
