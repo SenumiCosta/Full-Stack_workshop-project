@@ -345,12 +345,14 @@ const Dashboard = () => {
       addLog(`Moved "${oldTask.title}" from "${oldTask.status}" to "${updates.status}"`);
     }
     const optimisticTask = { ...oldTask, ...updates, updatedAt: new Date().toISOString() };
-    setTasks(prev => prev.map(t => t._id === taskId ? optimisticTask : t));
+    setTasks(prev => {
+      const next = prev.map(t => (t._id === taskId ? optimisticTask : t));
+      taskCache.saveByBoard(activeBoardId, next);
+      return next;
+    });
     if (selectedTask && selectedTask._id === taskId) {
       setSelectedTask(optimisticTask);
     }
-    const updatedTasks = tasks.map(t => t._id === taskId ? optimisticTask : t);
-    taskCache.saveByBoard(activeBoardId, updatedTasks);
 
     if (isOffline) {
       syncQueue.enqueue({
