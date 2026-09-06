@@ -161,6 +161,7 @@ const Dashboard = () => {
 
   const handleDrop = async (e, targetStatus) => {
     e.preventDefault();
+    e.stopPropagation();
     const taskId = e.dataTransfer.getData('text/plain');
     if (!taskId) return;
     const task = tasks.find(t => t._id === taskId);
@@ -172,11 +173,11 @@ const Dashboard = () => {
   const handleTaskUpdate = async (taskId, updates) => {
     const oldTask = tasks.find(t => t._id === taskId);
     if (!oldTask) return;
-    const updatedTasks = tasks.map(t => t._id === taskId ? { ...t, ...updates } : t);
-    setTasks(updatedTasks);
+    setTasks(prev => prev.map(t => t._id === taskId ? { ...t, ...updates } : t));
     if (selectedTask && selectedTask._id === taskId) {
       setSelectedTask(prev => ({ ...prev, ...updates }));
     }
+    const updatedTasks = tasks.map(t => t._id === taskId ? { ...t, ...updates } : t);
     taskCache.saveByBoard(activeBoardId, updatedTasks);
     if (isOffline) {
       alert('Task updated offline. Will sync when online.');
@@ -186,12 +187,11 @@ const Dashboard = () => {
       const updatesWithTimestamp = { ...updates, _clientUpdatedAt: oldTask.updatedAt };
       const res = await api.put(`/tasks/${taskId}`, updatesWithTimestamp);
       const updatedTask = res.data.data || { ...oldTask, ...updates };
-      const finalTasks = tasks.map(t => t._id === taskId ? updatedTask : t);
-      setTasks(finalTasks);
+      setTasks(prev => prev.map(t => t._id === taskId ? updatedTask : t));
       if (selectedTask && selectedTask._id === taskId) {
         setSelectedTask(updatedTask);
       }
-      taskCache.saveByBoard(activeBoardId, finalTasks);
+      taskCache.update(activeBoardId, taskId, updatedTask);
       setLastSync();
     } catch (err) {
       if (err.isConflict) {
@@ -201,8 +201,8 @@ const Dashboard = () => {
         });
       } else {
         console.error('Failed to update task:', err);
-        setTasks(tasks);
-        taskCache.saveByBoard(activeBoardId, tasks);
+        setTasks(prev => prev.map(t => t._id === taskId ? oldTask : t));
+        taskCache.update(activeBoardId, taskId, oldTask);
         alert(err.response?.data?.message || 'Failed to update task. Please try again.');
       }
     }
