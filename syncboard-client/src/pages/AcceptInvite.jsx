@@ -14,9 +14,13 @@ const AcceptInvite = () => {
   const [joinedSuccess, setJoinedSuccess] = useState(false);
 
   const currentToken = localStorage.getItem('syncboard_token');
-  const storedUser = localStorage.getItem('syncboard_user')
-    ? JSON.parse(localStorage.getItem('syncboard_user'))
-    : null;
+  let storedUser = null;
+  try {
+    const raw = localStorage.getItem('syncboard_user');
+    storedUser = raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    storedUser = null;
+  }
 
   useEffect(() => {
     const fetchInviteDetails = async () => {
