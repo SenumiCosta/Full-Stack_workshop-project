@@ -706,18 +706,8 @@ const Dashboard = () => {
                 </span>
               )}
             </div>
-            <button
-              type="button"
-              style={styles.syncBtn}
               onClick={() => {
-                if (!isOffline) {
-                  syncOfflineChanges(api, async () => {
-                    const bRes = await api.get('/boards');
-                    setBoards(bRes.data.data || bRes.data);
-                  });
-                } else {
-                  alert('You are currently offline. Reconnect to the network to sync changes.');
-                }
+                alert('You are currently offline. Reconnect to the network to sync changes.');
               }}
             >
               Sync Status
