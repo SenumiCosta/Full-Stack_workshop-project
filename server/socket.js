@@ -3,9 +3,20 @@ const socketio = require('socket.io');
 let io;
 
 const initializeSocket = (server) => {
+  const allowedOrigins = (process.env.CLIENT_URL || 'http://localhost:5173,http://localhost:80,http://localhost')
+    .split(',')
+    .map(url => url.trim().replace(/\/+$/, ''));
+
   io = socketio(server, {
     cors: {
-      origin: process.env.CLIENT_URL || 'http://localhost:5173',
+      origin: (origin, callback) => {
+        if (!origin) return callback(null, true);
+        const cleanOrigin = origin.replace(/\/+$/, '');
+        if (allowedOrigins.includes('*') || allowedOrigins.includes(cleanOrigin)) {
+          return callback(null, true);
+        }
+        return callback(null, true);
+      },
       methods: ['GET', 'POST'],
       credentials: true
     },
