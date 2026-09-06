@@ -15,7 +15,7 @@ import api from '../../api/apiClient';
 import { useCache } from '../../context/CacheContext';
 
 const Sidebar = ({
-  boards = [],
+  boards,
   activeBoardId,
   onSelectBoard,
   onCreateBoard,
@@ -49,8 +49,9 @@ const Sidebar = ({
     };
   }, [isOrgDropdownOpen]);
 
+  // Only fetch internally if boards prop was NOT passed at all by the parent
   useEffect(() => {
-    if (!boards || boards.length === 0) {
+    if (boards === undefined) {
       const fetchBoards = async () => {
         try {
           const res = await api.get('/boards');
@@ -64,7 +65,7 @@ const Sidebar = ({
     }
   }, [boards]);
 
-  const effectiveBoards = (boards && boards.length > 0) ? boards : internalBoards;
+  const effectiveBoards = boards !== undefined ? boards : internalBoards;
 
   const currentOrg = organizations.find(o => o._id === activeOrgId);
 
@@ -228,6 +229,47 @@ const Sidebar = ({
               </button>
             )}
           </div>
+
+          {/* Organization Members List */}
+          <div style={styles.orgMembersList}>
+            <div style={styles.orgMembersHeader}>
+              <span style={styles.orgMembersTitle}>Team Members</span>
+            </div>
+            <div style={styles.orgMembersContainer}>
+              {(currentOrg.members || []).map((member, idx) => {
+                const memberName = member.user?.name || (typeof member.user === 'string' ? member.user : `Member ${idx + 1}`);
+                const memberEmail = member.user?.email || '';
+                const memberUserId = member.user?._id || member.user;
+                const isOwner = String(currentOrg.owner?._id || currentOrg.owner || '') === String(memberUserId);
+                const isMe = String(currentUserId || '') === String(memberUserId);
+                const roleLabel = isOwner ? 'Owner' : (member.role === 'admin' ? 'Admin' : 'Member');
+                const initial = (memberName || 'M').charAt(0).toUpperCase();
+
+                return (
+                  <div key={member._id || member.user?._id || idx} style={styles.orgMemberRow} title={memberEmail || memberName}>
+                    <div style={styles.orgMemberAvatar}>
+                      {initial}
+                    </div>
+                    <div style={styles.orgMemberInfo}>
+                      <span style={styles.orgMemberName}>
+                        {memberName} {isMe && <span style={styles.meTag}>(You)</span>}
+                      </span>
+                      {memberEmail && (
+                        <span style={styles.orgMemberEmail}>{memberEmail}</span>
+                      )}
+                    </div>
+                    <span style={{
+                      ...styles.orgMemberBadge,
+                      background: isOwner ? 'rgba(99, 102, 241, 0.2)' : (member.role === 'admin' ? 'rgba(245, 158, 11, 0.2)' : 'rgba(255, 255, 255, 0.08)'),
+                      color: isOwner ? '#818cf8' : (member.role === 'admin' ? '#f59e0b' : 'var(--text-muted)')
+                    }}>
+                      {roleLabel}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </div>
       )}
 
@@ -268,7 +310,7 @@ const Sidebar = ({
                   {board.name}
                 </span>
               </span>
-              {boards.length > 1 && (
+              {effectiveBoards.length > 1 && (
                 <button
                   style={styles.deleteBtn}
                   onClick={() => handleDelete(board._id)}
@@ -510,6 +552,86 @@ const styles = {
     cursor: 'pointer',
     fontWeight: '600',
     transition: 'background 0.2s ease'
+  },
+  orgMembersList: {
+    marginTop: '10px',
+    paddingTop: '8px',
+    borderTop: '1px solid rgba(99, 102, 241, 0.15)'
+  },
+  orgMembersHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '6px'
+  },
+  orgMembersTitle: {
+    fontSize: '0.68rem',
+    textTransform: 'uppercase',
+    letterSpacing: '0.05em',
+    fontWeight: '700',
+    color: 'var(--text-muted)'
+  },
+  orgMembersContainer: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '5px',
+    maxHeight: '140px',
+    overflowY: 'auto'
+  },
+  orgMemberRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    padding: '4px 6px',
+    borderRadius: '6px',
+    background: 'rgba(255, 255, 255, 0.03)'
+  },
+  orgMemberAvatar: {
+    width: '22px',
+    height: '22px',
+    borderRadius: '50%',
+    background: 'linear-gradient(135deg, #6366f1, #a855f7)',
+    color: '#ffffff',
+    fontSize: '0.68rem',
+    fontWeight: '700',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0
+  },
+  orgMemberInfo: {
+    display: 'flex',
+    flexDirection: 'column',
+    minWidth: 0,
+    flex: 1
+  },
+  orgMemberName: {
+    fontSize: '0.76rem',
+    fontWeight: '600',
+    color: 'var(--text-primary)',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap'
+  },
+  orgMemberEmail: {
+    fontSize: '0.65rem',
+    color: 'var(--text-muted)',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap'
+  },
+  meTag: {
+    fontSize: '0.65rem',
+    color: 'var(--color-primary)',
+    fontWeight: 'normal',
+    marginLeft: '3px'
+  },
+  orgMemberBadge: {
+    fontSize: '0.62rem',
+    padding: '1px 5px',
+    borderRadius: '4px',
+    fontWeight: '600',
+    flexShrink: 0
   },
   header: {
     display: 'flex',

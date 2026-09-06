@@ -131,4 +131,40 @@ describe('Dashboard', () => {
     expect(localStorage.getItem('syncboard_user')).toBeNull();
     expect(mockNavigate).toHaveBeenCalledWith('/login');
   });
+
+  it('renders task activity log with status changes', async () => {
+    renderDashboard();
+
+    await waitFor(() => {
+      expect(screen.getByText('Task Activity')).toBeInTheDocument();
+      expect(screen.getByText('No task status changes yet.')).toBeInTheDocument();
+    });
+  });
+
+  it('displays historical task status changes in Task Activity', async () => {
+    const taskWithHistory = {
+      ...mockTasks[0],
+      _id: 'task-hist-1',
+      title: 'Historical Task',
+      history: [
+        { text: 'Moved from "Not Started" to "Doing"', timestamp: new Date().toISOString() }
+      ]
+    };
+    api.get.mockImplementation((url) => {
+      if (url.includes('/tasks')) {
+        return Promise.resolve({ data: { success: true, data: [taskWithHistory] } });
+      }
+      if (url.includes('/orgs')) {
+        return Promise.resolve({ data: { success: true, data: [] } });
+      }
+      return Promise.resolve({ data: { success: true, data: [mockBoard] } });
+    });
+
+    renderDashboard();
+
+    await waitFor(() => {
+      expect(screen.getByText('Task Activity')).toBeInTheDocument();
+      expect(screen.getByText(/\[Historical Task\] Moved from "Not Started" to "Doing"/)).toBeInTheDocument();
+    });
+  });
 });

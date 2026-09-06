@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { CheckCircle2, Circle, Plus, WifiOff, Building2, UserPlus } from 'lucide-react';
+import { CheckCircle2, Circle, Plus, WifiOff, Building2, UserPlus, Calendar } from 'lucide-react';
 import { useCache } from '../context/CacheContext';
 import { useSocket } from '../context/SocketContext';
 import api from '../api/apiClient';
@@ -37,9 +37,33 @@ const Dashboard = () => {
     currentUser = raw ? { name: raw } : null;
   }
 
-  const { taskCache, boardCache, isOffline, setLastSync } = useCache();
+  const {
+    taskCache,
+    boardCache,
+    orgCache,
+    syncQueue,
+    isOffline,
+    isSyncing,
+    pendingCount,
+    setLastSync,
+    syncOfflineChanges
+  } = useCache();
   const { socket, isConnected, connect, joinBoard, on, off } = useSocket();
   const token = localStorage.getItem('syncboard_token');
+
+  // Task status activity logging state
+  const [sessionLogs, setSessionLogs] = useState([]);
+
+  const addLog = (text) => {
+    const time = new Date();
+    const newLog = {
+      id: `log_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+      text,
+      timestamp: time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      rawTime: time.getTime()
+    };
+    setSessionLogs(prev => [newLog, ...prev.filter(l => l.text !== text || (time.getTime() - (l.rawTime || 0)) > 5000)].slice(0, 50));
+  };
 
   useEffect(() => {
     if (token && !socket) {
@@ -53,25 +77,51 @@ const Dashboard = () => {
     }
   }, [activeBoardId, isConnected]);
 
+  const getBoardOrgId = (board) => {
+    if (!board || !board.organization) return null;
+    if (typeof board.organization === 'object') {
+      return board.organization._id ? String(board.organization._id) : null;
+    }
+    return String(board.organization);
+  };
+
   useEffect(() => {
     const loadBoards = async () => {
       setIsLoading(true);
-      const cachedBoards = boardCache.getAll();
+      const cachedBoards = boardCache.getAll() || [];
       if (cachedBoards && cachedBoards.length > 0) {
         setBoards(cachedBoards);
-        if (!activeBoardId) {
-          setActiveBoardId(cachedBoards[0]._id);
+        const matchingCached = cachedBoards.filter(b => {
+          const bOrgId = getBoardOrgId(b);
+          if (activeOrgId) return bOrgId === String(activeOrgId);
+          return bOrgId === null;
+        });
+        if (matchingCached.length > 0) {
+          setActiveBoardId(matchingCached[0]._id);
+        } else {
+          setActiveBoardId(null);
+          setTasks([]);
         }
       }
       if (!isOffline) {
         try {
           const res = await api.get('/boards');
-          const freshBoards = res.data.data || res.data;
+          const freshBoards = res.data.data || res.data || [];
           setBoards(freshBoards);
           boardCache.saveAll(freshBoards);
           setLastSync();
-          if (!activeBoardId && freshBoards.length > 0) {
-            setActiveBoardId(freshBoards[0]._id);
+          const matchingFresh = freshBoards.filter(b => {
+            const bOrgId = getBoardOrgId(b);
+            if (activeOrgId) return bOrgId === String(activeOrgId);
+            return bOrgId === null;
+          });
+          if (matchingFresh.length > 0) {
+            if (!matchingFresh.some(b => b._id === activeBoardId)) {
+              setActiveBoardId(matchingFresh[0]._id);
+            }
+          } else {
+            setActiveBoardId(null);
+            setTasks([]);
           }
         } catch (err) {
           console.error('Failed to fetch boards:', err);
@@ -84,23 +134,53 @@ const Dashboard = () => {
 
   useEffect(() => {
     const loadOrganizations = async () => {
-      try {
-        const res = await api.get('/orgs');
-        setOrganizations(res.data.data || []);
-      } catch (err) {
-        console.error('Failed to load organizations:', err);
+      const cachedOrgs = orgCache?.getAll() || [];
+      if (cachedOrgs.length > 0) {
+        setOrganizations(cachedOrgs);
+      }
+      if (!isOffline) {
+        try {
+          const res = await api.get('/orgs');
+          const freshOrgs = res.data.data || [];
+          setOrganizations(freshOrgs);
+          orgCache?.saveAll(freshOrgs);
+        } catch (err) {
+          console.error('Failed to load organizations:', err);
+        }
       }
     };
     loadOrganizations();
-  }, []);
+  }, [isOffline]);
+
+  // Auto-sync offline mutation queue when coming back online
+  useEffect(() => {
+    if (!isOffline && syncQueue && syncQueue.getPendingCount() > 0 && !isSyncing) {
+      syncOfflineChanges(api, async () => {
+        try {
+          const bRes = await api.get('/boards');
+          const fresh = bRes.data.data || bRes.data;
+          setBoards(fresh);
+          boardCache.saveAll(fresh);
+          if (activeBoardId) {
+            const tRes = await api.get(`/boards/${activeBoardId}/tasks`);
+            const freshTasks = tRes.data.data || tRes.data;
+            setTasks(freshTasks);
+            taskCache.saveByBoard(activeBoardId, freshTasks);
+          }
+        } catch (err) {
+          console.error('Post-sync refresh error:', err);
+        }
+      });
+    }
+  }, [isOffline]);
 
   // Filter boards for the active workspace (Personal or Organization)
   const displayedBoards = boards.filter(b => {
+    const bOrgId = getBoardOrgId(b);
     if (activeOrgId) {
-      const bOrgId = b.organization?._id || b.organization;
-      return bOrgId === activeOrgId;
+      return bOrgId === String(activeOrgId);
     }
-    return !b.organization;
+    return bOrgId === null;
   });
 
   // Switch activeBoardId whenever activeOrgId changes
@@ -108,11 +188,11 @@ const Dashboard = () => {
     if (boards.length === 0) return;
 
     const matchingBoards = boards.filter(b => {
+      const bOrgId = getBoardOrgId(b);
       if (activeOrgId) {
-        const bOrgId = b.organization?._id || b.organization;
-        return bOrgId === activeOrgId;
+        return bOrgId === String(activeOrgId);
       }
-      return !b.organization;
+      return bOrgId === null;
     });
 
     if (matchingBoards.length > 0) {
@@ -155,6 +235,10 @@ const Dashboard = () => {
       console.log('Task created:', newTask);
       setTasks(prev => {
         if (prev.some(t => t._id === newTask._id)) return prev;
+        const tempIdx = prev.findIndex(t => String(t._id).startsWith('temp_') && t.title === newTask.title);
+        if (tempIdx !== -1) {
+          return prev.map((t, i) => i === tempIdx ? newTask : t);
+        }
         return [...prev, newTask];
       });
       taskCache.add(activeBoardId, newTask);
@@ -162,6 +246,10 @@ const Dashboard = () => {
     const handleTaskUpdated = (updatedTask) => {
       console.log('Task updated:', updatedTask);
       setTasks(prev => {
+        const prevTask = prev.find(t => t._id === updatedTask._id);
+        if (prevTask && prevTask.status !== updatedTask.status) {
+          addLog(`Moved "${updatedTask.title}" from "${prevTask.status}" to "${updatedTask.status}"`);
+        }
         const exists = prev.some(t => t._id === updatedTask._id);
         if (!exists) return [...prev, updatedTask];
         return prev.map(t => t._id === updatedTask._id ? updatedTask : t);
@@ -187,27 +275,45 @@ const Dashboard = () => {
     const tempTask = {
       ...newTask,
       _id: `temp_${Date.now()}`,
+      board: activeBoardId,
+      updatedAt: new Date().toISOString(),
       history: [{ text: 'Task created', timestamp: new Date().toISOString() }]
     };
     setTasks(prev => [...prev, tempTask]);
     taskCache.add(activeBoardId, tempTask);
+
     if (isOffline) {
-      alert('Task saved offline. Will sync when online.');
+      syncQueue.enqueue({
+        type: 'CREATE_TASK',
+        boardId: activeBoardId,
+        data: newTask,
+        tempId: tempTask._id
+      });
+      setLastSync();
       return;
     }
+
     try {
       const res = await api.post(`/boards/${activeBoardId}/tasks`, newTask);
       const createdTask = res.data.data || res.data;
-      setTasks(prev => prev.map(t => t._id === tempTask._id ? createdTask : t));
+      setTasks(prev => {
+        if (prev.some(t => t._id === createdTask._id)) {
+          return prev.filter(t => t._id !== tempTask._id);
+        }
+        return prev.map(t => t._id === tempTask._id ? createdTask : t);
+      });
       const currentTasks = taskCache.getByBoard(activeBoardId) || [];
       taskCache.saveByBoard(activeBoardId, currentTasks.filter(t => t._id !== tempTask._id).concat(createdTask));
       setLastSync();
     } catch (err) {
-      console.error('Failed to create task:', err);
-      setTasks(prev => prev.filter(t => t._id !== tempTask._id));
-      const currentTasks = taskCache.getByBoard(activeBoardId) || [];
-      taskCache.saveByBoard(activeBoardId, currentTasks.filter(t => t._id !== tempTask._id));
-      alert(err.response?.data?.message || 'Failed to create task. Please try again.');
+      console.error('Failed to create task online, queued for offline sync:', err);
+      syncQueue.enqueue({
+        type: 'CREATE_TASK',
+        boardId: activeBoardId,
+        data: newTask,
+        tempId: tempTask._id
+      });
+      setLastSync();
     }
   };
 
@@ -235,16 +341,28 @@ const Dashboard = () => {
   const handleTaskUpdate = async (taskId, updates) => {
     const oldTask = tasks.find(t => t._id === taskId);
     if (!oldTask) return;
-    setTasks(prev => prev.map(t => t._id === taskId ? { ...t, ...updates } : t));
-    if (selectedTask && selectedTask._id === taskId) {
-      setSelectedTask(prev => ({ ...prev, ...updates }));
+    if (updates.status && updates.status !== oldTask.status) {
+      addLog(`Moved "${oldTask.title}" from "${oldTask.status}" to "${updates.status}"`);
     }
-    const updatedTasks = tasks.map(t => t._id === taskId ? { ...t, ...updates } : t);
+    const optimisticTask = { ...oldTask, ...updates, updatedAt: new Date().toISOString() };
+    setTasks(prev => prev.map(t => t._id === taskId ? optimisticTask : t));
+    if (selectedTask && selectedTask._id === taskId) {
+      setSelectedTask(optimisticTask);
+    }
+    const updatedTasks = tasks.map(t => t._id === taskId ? optimisticTask : t);
     taskCache.saveByBoard(activeBoardId, updatedTasks);
+
     if (isOffline) {
-      alert('Task updated offline. Will sync when online.');
+      syncQueue.enqueue({
+        type: 'UPDATE_TASK',
+        boardId: activeBoardId,
+        taskId: taskId,
+        data: updates
+      });
+      setLastSync();
       return;
     }
+
     try {
       const updatesWithTimestamp = { ...updates, _clientUpdatedAt: oldTask.updatedAt };
       const res = await api.put(`/tasks/${taskId}`, updatesWithTimestamp);
@@ -262,10 +380,14 @@ const Dashboard = () => {
           serverData: err.serverData
         });
       } else {
-        console.error('Failed to update task:', err);
-        setTasks(prev => prev.map(t => t._id === taskId ? oldTask : t));
-        taskCache.update(activeBoardId, taskId, oldTask);
-        alert(err.response?.data?.message || 'Failed to update task. Please try again.');
+        console.error('Failed to update task online, queued for offline sync:', err);
+        syncQueue.enqueue({
+          type: 'UPDATE_TASK',
+          boardId: activeBoardId,
+          taskId: taskId,
+          data: updates
+        });
+        setLastSync();
       }
     }
   };
@@ -289,22 +411,54 @@ const Dashboard = () => {
     const updatedTasks = tasks.filter(t => t._id !== taskId);
     setTasks(updatedTasks);
     taskCache.saveByBoard(activeBoardId, updatedTasks);
+
     if (isOffline) {
-      alert('Task deleted offline. Will sync when online.');
+      syncQueue.enqueue({
+        type: 'DELETE_TASK',
+        boardId: activeBoardId,
+        taskId: taskId
+      });
+      setLastSync();
       return;
     }
+
     try {
       await api.delete(`/tasks/${taskId}`);
       setLastSync();
     } catch (err) {
-      console.error('Failed to delete task:', err);
-      setTasks(tasks);
-      taskCache.saveByBoard(activeBoardId, tasks);
-      alert('Failed to delete task. Please try again.');
+      console.error('Failed to delete task online, queued for offline sync:', err);
+      syncQueue.enqueue({
+        type: 'DELETE_TASK',
+        boardId: activeBoardId,
+        taskId: taskId
+      });
+      setLastSync();
     }
   };
 
   const handleCreateBoard = async (boardName) => {
+    const tempBoard = {
+      _id: `temp_board_${Date.now()}`,
+      name: boardName,
+      organization: activeOrgId || null,
+      createdAt: new Date().toISOString()
+    };
+
+    if (isOffline) {
+      const updatedBoards = [tempBoard, ...boards];
+      setBoards(updatedBoards);
+      setActiveBoardId(tempBoard._id);
+      setTasks([]);
+      boardCache.saveAll(updatedBoards);
+      syncQueue.enqueue({
+        type: 'CREATE_BOARD',
+        data: { name: boardName, organization: activeOrgId || null },
+        tempId: tempBoard._id
+      });
+      setLastSync();
+      return;
+    }
+
     try {
       const res = await api.post('/boards', { 
         name: boardName,
@@ -314,32 +468,83 @@ const Dashboard = () => {
       const updatedBoards = [newBoard, ...boards];
       setBoards(updatedBoards);
       setActiveBoardId(newBoard._id);
+      setTasks([]);
       boardCache.saveAll(updatedBoards);
       setLastSync();
     } catch (err) {
-      console.error('Failed to create board:', err);
-      alert(err.response?.data?.message || 'Failed to create board');
+      console.error('Failed to create board online, saving offline:', err);
+      const updatedBoards = [tempBoard, ...boards];
+      setBoards(updatedBoards);
+      setActiveBoardId(tempBoard._id);
+      setTasks([]);
+      boardCache.saveAll(updatedBoards);
+      syncQueue.enqueue({
+        type: 'CREATE_BOARD',
+        data: { name: boardName, organization: activeOrgId || null },
+        tempId: tempBoard._id
+      });
+      setLastSync();
     }
   };
 
   const handleDeleteBoard = async (boardId) => {
+    const updatedBoards = boards.filter(b => b._id !== boardId);
+    setBoards(updatedBoards);
+    boardCache.saveAll(updatedBoards);
+    if (activeBoardId === boardId) {
+      const remainingForWorkspace = displayedBoards.filter(b => b._id !== boardId);
+      if (remainingForWorkspace.length > 0) {
+        setActiveBoardId(remainingForWorkspace[0]._id);
+      } else {
+        setActiveBoardId(null);
+        setTasks([]);
+      }
+    }
+
+    if (isOffline) {
+      syncQueue.enqueue({
+        type: 'DELETE_BOARD',
+        boardId: boardId
+      });
+      setLastSync();
+      return;
+    }
+
     try {
       await api.delete(`/boards/${boardId}`);
-      const updatedBoards = boards.filter(b => b._id !== boardId);
-      setBoards(updatedBoards);
-      boardCache.saveAll(updatedBoards);
-      if (activeBoardId === boardId) {
-        setActiveBoardId(updatedBoards.length > 0 ? updatedBoards[0]._id : null);
-      }
       setLastSync();
     } catch (err) {
-      console.error('Failed to delete board:', err);
-      alert(err.response?.data?.message || 'Failed to delete board');
+      console.error('Failed to delete board online, queued for offline sync:', err);
+      syncQueue.enqueue({
+        type: 'DELETE_BOARD',
+        boardId: boardId
+      });
+      setLastSync();
     }
   };
 
   const handleBoardSelect = (boardId) => {
+    if (boardId === activeBoardId) return;
     setActiveBoardId(boardId);
+    const cached = taskCache.getByBoard(boardId) || [];
+    setTasks(cached);
+  };
+
+  const handleSelectOrg = (orgId) => {
+    setActiveOrgId(orgId);
+    setTasks([]);
+    const matching = boards.filter(b => {
+      const bOrgId = getBoardOrgId(b);
+      if (orgId) return bOrgId === String(orgId);
+      return bOrgId === null;
+    });
+    if (matching.length > 0) {
+      setActiveBoardId(matching[0]._id);
+      const cached = taskCache.getByBoard(matching[0]._id) || [];
+      setTasks(cached);
+    } else {
+      setActiveBoardId(null);
+    }
   };
 
   const handleLogout = () => {
@@ -349,7 +554,7 @@ const Dashboard = () => {
     navigate('/login');
   };
 
-  const currentOrg = organizations.find(o => o._id === activeOrgId);
+  const currentOrg = organizations.find(o => String(o._id) === String(activeOrgId));
   const currentUserId = currentUser?._id || currentUser?.id;
   const isOrgAdmin = Boolean(
     currentOrg && currentUserId && (
@@ -360,7 +565,60 @@ const Dashboard = () => {
     )
   );
 
-  const currentBoard = boards.find(b => b._id === activeBoardId);
+  const currentBoard = displayedBoards.find(b => b._id === activeBoardId);
+  const formattedDate = new Date().toLocaleDateString('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric'
+  });
+
+  // Derive historical activity logs from current board's tasks (status changes only)
+  const taskHistoryLogs = useMemo(() => {
+    if (!tasks || tasks.length === 0) return [];
+    const logs = [];
+    tasks.forEach(task => {
+      if (Array.isArray(task.history) && task.history.length > 0) {
+        task.history.forEach((h, idx) => {
+          const text = h.text || '';
+          // Only include entries that describe a status change or move
+          const isStatusChange = /status|moved/i.test(text);
+          if (!isStatusChange) return;
+
+          const statusParts = text.split(', ').filter(part => /status|moved/i.test(part));
+          const displayText = statusParts.length > 0 ? statusParts.join(', ') : text;
+
+          const timeObj = h.timestamp ? new Date(h.timestamp) : null;
+          const rawTime = timeObj && !isNaN(timeObj.getTime()) ? timeObj.getTime() : 0;
+          logs.push({
+            id: `task_hist_${task._id}_${idx}_${rawTime}`,
+            text: `[${task.title}] ${displayText}`,
+            timestamp: timeObj && !isNaN(timeObj.getTime())
+              ? timeObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+              : '',
+            rawTime
+          });
+        });
+      }
+    });
+    return logs;
+  }, [tasks]);
+
+  // Merge live session activity with task history, newest first
+  const combinedLogs = useMemo(() => {
+    const all = [...sessionLogs, ...taskHistoryLogs];
+    all.sort((a, b) => (b.rawTime || 0) - (a.rawTime || 0));
+
+    const seen = new Set();
+    const unique = [];
+    for (const item of all) {
+      if (!seen.has(item.id)) {
+        seen.add(item.id);
+        unique.push(item);
+      }
+    }
+    return unique.slice(0, 50);
+  }, [sessionLogs, taskHistoryLogs]);
 
   return (
     <div style={styles.dashboard}>
@@ -373,7 +631,7 @@ const Dashboard = () => {
           onDeleteBoard={handleDeleteBoard}
           organizations={organizations}
           activeOrgId={activeOrgId}
-          onSelectOrg={(orgId) => setActiveOrgId(orgId)}
+          onSelectOrg={handleSelectOrg}
           onCreateOrgClick={() => setIsCreateOrgModalOpen(true)}
           onInviteClick={() => setIsInviteModalOpen(true)}
           currentUser={currentUser}
@@ -390,6 +648,18 @@ const Dashboard = () => {
                 </span>
               ) : (
                 <span style={styles.personalTag}>Personal Workspace</span>
+              )}
+              <span style={styles.dateTag} title="Today's Date">
+                <Calendar size={13} color="var(--text-muted)" />
+                {formattedDate}
+              </span>
+              {currentOrg && currentOrg.members && currentOrg.members.length > 0 && (
+                <span 
+                  style={styles.headerMembersBadge} 
+                  title={currentOrg.members.map(m => m.user?.name || (typeof m.user === 'string' ? m.user : 'Member')).join(', ')}
+                >
+                  Team: {currentOrg.members.map(m => m.user?.name || (typeof m.user === 'string' ? m.user : 'Member')).join(', ')}
+                </span>
               )}
             </div>
             <h2 style={styles.boardTitle}>{currentBoard?.name || 'Select a board'}</h2>
@@ -422,78 +692,133 @@ const Dashboard = () => {
             </button>
           </div>
         </div>
-        <div style={styles.columns}>
-          {['Not Started', 'Doing', 'Done'].map(status => (
-            <div
-              key={status}
-              style={styles.column}
-              onDragOver={handleDragOver}
-              onDrop={(e) => handleDrop(e, status)}
-            >
-              <div style={styles.columnHeader}>
-                <h4 style={styles.columnTitle}>{status}</h4>
-                <span style={styles.taskCount}>
-                  {tasks.filter(task => task.status === status).length}
+        {/* Offline & Sync Notification Banner */}
+        {isOffline && (
+          <div style={styles.offlineBanner}>
+            <div style={styles.offlineBannerLeft}>
+              <WifiOff size={15} color="#f59e0b" />
+              <span>
+                <strong>Working Offline:</strong> Changes are saved locally and will auto-sync when connection is restored.
+              </span>
+              {pendingCount > 0 && (
+                <span style={styles.pendingBadge}>
+                  {pendingCount} {pendingCount === 1 ? 'change' : 'changes'} pending
                 </span>
-              </div>
-              <div style={styles.taskList}>
-                {tasks
-                  .filter(task => task.status === status)
-                  .map(task => (
-                    <div
-                      key={task._id}
-                      style={{ ...styles.taskCard, cursor: 'grab' }}
-                      draggable
-                      onDragStart={(e) => handleDragStart(e, task._id)}
-                      onClick={() => setSelectedTask(task)}
-                    >
-                      <div style={styles.taskHeader}>
-                        <h5 style={styles.taskTitle}>{task.title}</h5>
-                        {task.priority && (
-                          <span style={{
-                            ...styles.priorityBadge,
-                            backgroundColor: task.priority === 'High' ? '#ef4444' :
-                                            task.priority === 'Medium' ? '#f59e0b' :
-                                            '#10b981'
-                          }}>
-                            {task.priority}
-                          </span>
-                        )}
-                      </div>
-                      {task.description && (
-                        <p style={styles.taskDescription}>
-                          {task.description.substring(0, 60)}
-                          {task.description.length > 60 && '...'}
-                        </p>
-                      )}
-                      <div style={styles.taskFooter}>
-                        <span style={styles.taskAssignee}>
-                          {task.assignee?.name || 'Unassigned'}
-                        </span>
-                        <span style={styles.taskDate}>
-                          {new Date(task.updatedAt).toLocaleDateString()}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                {isLoading && <p style={styles.loading}>Loading tasks...</p>}
-                {!isLoading && tasks.filter(t => t.status === status).length === 0 && (
-                  <p style={styles.empty}>No tasks</p>
-                )}
-              </div>
+              )}
             </div>
-          ))}
-        </div>
+            <button
+              type="button"
+              style={styles.syncBtn}
+              onClick={() => {
+                if (!isOffline) {
+                  syncOfflineChanges(api, async () => {
+                    const bRes = await api.get('/boards');
+                    setBoards(bRes.data.data || bRes.data);
+                  });
+                } else {
+                  alert('You are currently offline. Reconnect to the network to sync changes.');
+                }
+              }}
+            >
+              Sync Status
+            </button>
+          </div>
+        )}
+        {isSyncing && (
+          <div style={styles.syncingBanner}>
+            <span>🔄</span>
+            <span>Syncing offline changes with database...</span>
+          </div>
+        )}
+        {!activeBoardId ? (
+          <div style={styles.emptyWorkspace}>
+            <Building2 size={42} color="var(--text-muted)" style={{ marginBottom: '12px', opacity: 0.6 }} />
+            <h3 style={styles.emptyWorkspaceTitle}>
+              {currentOrg ? `No boards in ${currentOrg.name}` : 'No Personal Boards'}
+            </h3>
+            <p style={styles.emptyWorkspaceText}>
+              {currentOrg
+                ? `Create a board in the sidebar to collaborate on tasks with ${currentOrg.name} members.`
+                : 'Create a personal board in the sidebar to organize your personal tasks.'}
+            </p>
+          </div>
+        ) : (
+          <div style={styles.columns}>
+            {['Not Started', 'Doing', 'Done'].map(status => (
+              <div
+                key={status}
+                style={styles.column}
+                onDragOver={handleDragOver}
+                onDrop={(e) => handleDrop(e, status)}
+              >
+                <div style={styles.columnHeader}>
+                  <h4 style={styles.columnTitle}>{status}</h4>
+                  <span style={styles.taskCount}>
+                    {tasks.filter(task => task.status === status).length}
+                  </span>
+                </div>
+                <div style={styles.taskList}>
+                  {tasks
+                    .filter(task => task.status === status)
+                    .map(task => (
+                      <div
+                        key={task._id}
+                        style={{ ...styles.taskCard, cursor: 'grab' }}
+                        draggable
+                        onDragStart={(e) => handleDragStart(e, task._id)}
+                        onClick={() => setSelectedTask(task)}
+                      >
+                        <div style={styles.taskHeader}>
+                          <h5 style={styles.taskTitle}>{task.title}</h5>
+                          {task.priority && (
+                            <span style={{
+                              ...styles.priorityBadge,
+                              backgroundColor: task.priority === 'High' ? '#ef4444' :
+                                              task.priority === 'Medium' ? '#f59e0b' :
+                                              '#10b981'
+                            }}>
+                              {task.priority}
+                            </span>
+                          )}
+                        </div>
+                        {task.description && (
+                          <p style={styles.taskDescription}>
+                            {task.description.substring(0, 60)}
+                            {task.description.length > 60 && '...'}
+                          </p>
+                        )}
+                        <div style={styles.taskFooter}>
+                          <span style={styles.taskAssignee}>
+                            {typeof task.assignee === 'object' && task.assignee !== null
+                              ? (task.assignee.name || 'Unassigned')
+                              : (task.assignee || 'Unassigned')}
+                          </span>
+                          <span style={styles.taskDate}>
+                            {new Date(task.updatedAt).toLocaleDateString()}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  {isLoading && <p style={styles.loading}>Loading tasks...</p>}
+                  {!isLoading && tasks.filter(t => t.status === status).length === 0 && (
+                    <p style={styles.empty}>No tasks</p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
       <div style={styles.activity}>
-        <ActivityLog logs={[]} />
+        <ActivityLog logs={combinedLogs} isLive={!isOffline && isConnected} />
       </div>
       {isCreateModalOpen && (
         <CreateTaskModal
           boardId={activeBoardId}
           onClose={() => setIsCreateModalOpen(false)}
           onSave={handleTaskCreatedLocal}
-          onTaskCreated={handleTaskCreatedLocal}
+          isOrg={Boolean(activeOrgId)}
+          orgMembers={currentOrg?.members || []}
         />
       )}
       {selectedTask && (
@@ -521,6 +846,8 @@ const Dashboard = () => {
         onOrgCreated={(newOrg) => {
           setOrganizations(prev => [newOrg, ...prev]);
           setActiveOrgId(newOrg._id);
+          setActiveBoardId(null);
+          setTasks([]);
         }}
       />
       <InviteMemberModal
@@ -570,7 +897,10 @@ const styles = {
     flexShrink: 0
   },
   headerContext: {
-    marginBottom: '4px'
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    marginBottom: '6px'
   },
   orgTag: {
     display: 'inline-flex',
@@ -587,6 +917,32 @@ const styles = {
     fontSize: '0.75rem',
     color: 'var(--text-muted)',
     fontWeight: '500'
+  },
+  dateTag: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '5px',
+    fontSize: '0.75rem',
+    color: 'var(--text-muted)',
+    background: 'rgba(255, 255, 255, 0.05)',
+    border: '1px solid var(--glass-border)',
+    padding: '2px 8px',
+    borderRadius: '6px'
+  },
+  headerMembersBadge: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '5px',
+    fontSize: '0.75rem',
+    color: 'var(--color-primary)',
+    background: 'rgba(99, 102, 241, 0.08)',
+    border: '1px solid rgba(99, 102, 241, 0.2)',
+    padding: '2px 8px',
+    borderRadius: '6px',
+    maxWidth: '300px',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap'
   },
   headerActions: {
     display: 'flex',
@@ -635,6 +991,81 @@ const styles = {
     gap: '6px',
     padding: '10px 20px',
     fontSize: '0.9rem'
+  },
+  offlineBanner: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    background: 'rgba(245, 158, 11, 0.12)',
+    border: '1px solid rgba(245, 158, 11, 0.3)',
+    borderRadius: '10px',
+    padding: '10px 16px',
+    fontSize: '0.85rem',
+    color: '#fbbf24',
+    flexShrink: 0
+  },
+  offlineBannerLeft: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    flexWrap: 'wrap'
+  },
+  pendingBadge: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    padding: '2px 8px',
+    borderRadius: '12px',
+    background: 'rgba(245, 158, 11, 0.25)',
+    color: '#fef3c7',
+    fontSize: '0.75rem',
+    fontWeight: '600'
+  },
+  syncBtn: {
+    padding: '4px 10px',
+    fontSize: '0.75rem',
+    borderRadius: '6px',
+    background: 'rgba(245, 158, 11, 0.2)',
+    border: '1px solid rgba(245, 158, 11, 0.4)',
+    color: '#fef3c7',
+    cursor: 'pointer',
+    fontWeight: '600'
+  },
+  syncingBanner: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    background: 'rgba(99, 102, 241, 0.12)',
+    border: '1px solid rgba(99, 102, 241, 0.3)',
+    borderRadius: '10px',
+    padding: '10px 16px',
+    fontSize: '0.85rem',
+    color: 'var(--color-primary)',
+    flexShrink: 0
+  },
+  emptyWorkspace: {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '50px 20px',
+    background: 'rgba(255, 255, 255, 0.02)',
+    borderRadius: '12px',
+    border: '1px dashed var(--glass-border)',
+    textAlign: 'center'
+  },
+  emptyWorkspaceTitle: {
+    margin: '0 0 8px 0',
+    fontSize: '1.25rem',
+    fontWeight: '600',
+    color: 'var(--text-primary)'
+  },
+  emptyWorkspaceText: {
+    margin: 0,
+    fontSize: '0.9rem',
+    color: 'var(--text-muted)',
+    maxWidth: '440px',
+    lineHeight: '1.5'
   },
   columns: {
     display: 'flex',

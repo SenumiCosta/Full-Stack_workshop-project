@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 
-const CreateTaskModal = ({ onClose, onSave, onTaskCreated }) => {
+const CreateTaskModal = ({ onClose, onSave, onTaskCreated, isOrg = false, orgMembers = [] }) => {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState('Medium');
@@ -15,12 +15,15 @@ const CreateTaskModal = ({ onClose, onSave, onTaskCreated }) => {
       title: title.trim(),
       description: description.trim(),
       priority,
-      assignee,
+      assignee: isOrg ? (assignee || 'Unassigned') : 'Unassigned',
       status: 'Not Started',
     };
 
-    if (onSave) onSave(taskData);
-    if (onTaskCreated) onTaskCreated(taskData);
+    if (onSave) {
+      onSave(taskData);
+    } else if (onTaskCreated) {
+      onTaskCreated(taskData);
+    }
     if (onClose) onClose();
   };
 
@@ -32,7 +35,9 @@ const CreateTaskModal = ({ onClose, onSave, onTaskCreated }) => {
         style={styles.modal}
       >
         <h3 style={styles.title}>Create Task</h3>
-        <p style={styles.subtitle}>Create a task card for the selected board.</p>
+        <p style={styles.subtitle}>
+          {isOrg ? 'Create a task card for your team board.' : 'Create a personal task card.'}
+        </p>
 
         <div style={styles.inputGroup}>
           <label style={styles.label}>Task Title</label>
@@ -46,7 +51,6 @@ const CreateTaskModal = ({ onClose, onSave, onTaskCreated }) => {
           />
         </div>
 
-
         <div style={styles.inputGroup}>
           <label style={styles.label}>Description</label>
 
@@ -58,40 +62,44 @@ const CreateTaskModal = ({ onClose, onSave, onTaskCreated }) => {
           />
         </div>
 
-
         <div style={{ display: 'flex', gap: '15px' }}>
-
           <div style={{ ...styles.inputGroup, flex: 1 }}>
             <label style={styles.label}>Priority</label>
 
             <select
               value={priority}
               onChange={(e) => setPriority(e.target.value)}
+              style={styles.select}
             >
-              <option value="Low">Low</option>
-              <option value="Medium">Medium</option>
-              <option value="High">High</option>
+              <option value="Low" style={styles.option}>Low</option>
+              <option value="Medium" style={styles.option}>Medium</option>
+              <option value="High" style={styles.option}>High</option>
             </select>
           </div>
 
+          {/* Only display Assignee dropdown for Organization boards */}
+          {isOrg && (
+            <div style={{ ...styles.inputGroup, flex: 1 }}>
+              <label style={styles.label}>Assignee</label>
 
-          <div style={{ ...styles.inputGroup, flex: 1 }}>
-            <label style={styles.label}>Assignee</label>
-
-            <select
-              value={assignee}
-              onChange={(e) => setAssignee(e.target.value)}
-            >
-              <option value="Senumi (Lead)">Senumi (Lead)</option>
-              <option value="Member 2">Member 2</option>
-              <option value="Member 3">Member 3</option>
-              <option value="Member 4">Member 4</option>
-              <option value="Member 5">Member 5</option>
-              <option value="Member 6">Member 6</option>
-              <option value="Member 7">Member 7</option>
-            </select>
-          </div>
-
+              <select
+                value={assignee}
+                onChange={(e) => setAssignee(e.target.value)}
+                style={styles.select}
+              >
+                <option value="Unassigned" style={styles.option}>Unassigned</option>
+                {orgMembers.map((member, idx) => {
+                  const name = member.user?.name || member.name || (typeof member.user === 'string' ? member.user : `Member ${idx + 1}`);
+                  const role = member.role === 'admin' ? 'Admin' : 'Member';
+                  return (
+                    <option key={member._id || member.user?._id || idx} value={name} style={styles.option}>
+                      {name} ({role})
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+          )}
         </div>
 
 
@@ -157,6 +165,23 @@ const styles = {
   title: { fontSize: '1.6rem', marginBottom: '6px' },
   subtitle: { color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '14px' },
 
+  select: {
+    backgroundColor: '#1a1a2e',
+    color: '#ffffff',
+    border: '1px solid var(--glass-border)',
+    borderRadius: '8px',
+    padding: '10px 14px',
+    fontSize: '0.95rem',
+    width: '100%',
+    outline: 'none',
+    cursor: 'pointer'
+  },
+
+  option: {
+    backgroundColor: '#1a1a2e',
+    color: '#ffffff',
+    padding: '8px 12px'
+  },
 
   actions: {
     marginTop: '25px',

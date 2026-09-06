@@ -27,7 +27,11 @@ const TaskDetailModal = ({ task, onClose, onSave, onDelete }) => {
         <div style={styles.infoGrid}>
           <div>
             <p style={styles.label}>Assignee</p>
-            <p style={styles.value}>{task.assignee?.name || 'Unassigned'}</p>
+            <p style={styles.value}>
+              {typeof task.assignee === 'object' && task.assignee !== null
+                ? (task.assignee.name || 'Unassigned')
+                : (task.assignee || 'Unassigned')}
+            </p>
           </div>
           <div>
             <p style={styles.label}>Priority</p>
