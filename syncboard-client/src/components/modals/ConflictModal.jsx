@@ -1,4 +1,5 @@
 import React from 'react';
+import { AlertTriangle } from 'lucide-react';
 import { getDifferences, mergeData } from '../../utils/conflict';
 
 const ConflictModal = ({ isOpen, onClose, clientData, serverData, onResolve }) => {
@@ -15,7 +16,7 @@ const ConflictModal = ({ isOpen, onClose, clientData, serverData, onResolve }) =
   return (
     <div style={styles.backdrop}>
       <div className="glass-panel" style={styles.modal}>
-        <h2 style={styles.title}>⚠️ Conflict Detected</h2>
+        <h2 style={styles.title}><AlertTriangle size={22} aria-hidden="true" /> Conflict Detected</h2>
         <p style={styles.subtitle}>
           This task has been modified by someone else. Please choose which version to keep.
         </p>
@@ -93,6 +94,9 @@ const styles = {
     overflowY: 'auto'
   },
   title: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
     color: '#f59e0b',
     marginBottom: '10px'
   },

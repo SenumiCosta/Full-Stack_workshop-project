@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { CheckCircle2, Circle, Plus, WifiOff } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { CheckCircle2, Circle, Plus, WifiOff, Building2, UserPlus } from 'lucide-react';
 import { useCache } from '../context/CacheContext';
 import { useSocket } from '../context/SocketContext';
 import api from '../api/apiClient';
@@ -8,8 +9,11 @@ import ActivityLog from '../components/Common/ActivityLog';
 import CreateTaskModal from "../components/modals/CreateTaskModal";
 import ConflictModal from '../components/modals/ConflictModal';
 import TaskDetailModal from '../components/modals/TaskDetailMOdal';
+import CreateOrgModal from '../components/modals/CreateOrgModal';
+import InviteMemberModal from '../components/modals/InviteMemberModal';
 
 const Dashboard = () => {
+  const navigate = useNavigate();
   const [boards, setBoards] = useState([]);
   const [activeBoardId, setActiveBoardId] = useState(null);
   const [tasks, setTasks] = useState([]);
@@ -17,6 +21,21 @@ const Dashboard = () => {
   const [selectedTask, setSelectedTask] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [conflictData, setConflictData] = useState(null);
+
+  // Organization & Workspace state
+  const [organizations, setOrganizations] = useState([]);
+  const [activeOrgId, setActiveOrgId] = useState(null); // null = Personal Workspace
+  const [isCreateOrgModalOpen, setIsCreateOrgModalOpen] = useState(false);
+  const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
+
+  let currentUser = null;
+  try {
+    const rawUser = localStorage.getItem('syncboard_user');
+    currentUser = rawUser ? JSON.parse(rawUser) : null;
+  } catch (e) {
+    const raw = localStorage.getItem('syncboard_user');
+    currentUser = raw ? { name: raw } : null;
+  }
 
   const { taskCache, boardCache, isOffline, setLastSync } = useCache();
   const { socket, isConnected, connect, joinBoard, on, off } = useSocket();
@@ -62,6 +81,49 @@ const Dashboard = () => {
     };
     loadBoards();
   }, []);
+
+  useEffect(() => {
+    const loadOrganizations = async () => {
+      try {
+        const res = await api.get('/orgs');
+        setOrganizations(res.data.data || []);
+      } catch (err) {
+        console.error('Failed to load organizations:', err);
+      }
+    };
+    loadOrganizations();
+  }, []);
+
+  // Filter boards for the active workspace (Personal or Organization)
+  const displayedBoards = boards.filter(b => {
+    if (activeOrgId) {
+      const bOrgId = b.organization?._id || b.organization;
+      return bOrgId === activeOrgId;
+    }
+    return !b.organization;
+  });
+
+  // Switch activeBoardId whenever activeOrgId changes
+  useEffect(() => {
+    if (boards.length === 0) return;
+
+    const matchingBoards = boards.filter(b => {
+      if (activeOrgId) {
+        const bOrgId = b.organization?._id || b.organization;
+        return bOrgId === activeOrgId;
+      }
+      return !b.organization;
+    });
+
+    if (matchingBoards.length > 0) {
+      if (!matchingBoards.some(b => b._id === activeBoardId)) {
+        setActiveBoardId(matchingBoards[0]._id);
+      }
+    } else {
+      setActiveBoardId(null);
+      setTasks([]);
+    }
+  }, [activeOrgId, boards]);
 
   useEffect(() => {
     if (!activeBoardId) return;
@@ -244,9 +306,12 @@ const Dashboard = () => {
 
   const handleCreateBoard = async (boardName) => {
     try {
-      const res = await api.post('/boards', { name: boardName });
+      const res = await api.post('/boards', { 
+        name: boardName,
+        organization: activeOrgId || null
+      });
       const newBoard = res.data.data || res.data;
-      const updatedBoards = [...boards, newBoard];
+      const updatedBoards = [newBoard, ...boards];
       setBoards(updatedBoards);
       setActiveBoardId(newBoard._id);
       boardCache.saveAll(updatedBoards);
@@ -277,22 +342,56 @@ const Dashboard = () => {
     setActiveBoardId(boardId);
   };
 
+  const handleLogout = () => {
+    localStorage.removeItem('syncboard_token');
+    localStorage.removeItem('syncboard_user');
+    localStorage.removeItem('syncboard_auth');
+    navigate('/login');
+  };
+
+  const currentOrg = organizations.find(o => o._id === activeOrgId);
+  const currentUserId = currentUser?._id || currentUser?.id;
+  const isOrgAdmin = Boolean(
+    currentOrg && currentUserId && (
+      String(currentOrg.owner?._id || currentOrg.owner || '') === String(currentUserId) ||
+      currentOrg.members?.some(
+        m => String(m.user?._id || m.user || '') === String(currentUserId) && m.role === 'admin'
+      )
+    )
+  );
+
   const currentBoard = boards.find(b => b._id === activeBoardId);
 
   return (
     <div style={styles.dashboard}>
       <div style={styles.sidebar}>
         <Sidebar
-          boards={boards}
+          boards={displayedBoards}
           activeBoardId={activeBoardId}
           onSelectBoard={handleBoardSelect}
           onCreateBoard={handleCreateBoard}
           onDeleteBoard={handleDeleteBoard}
+          organizations={organizations}
+          activeOrgId={activeOrgId}
+          onSelectOrg={(orgId) => setActiveOrgId(orgId)}
+          onCreateOrgClick={() => setIsCreateOrgModalOpen(true)}
+          onInviteClick={() => setIsInviteModalOpen(true)}
+          currentUser={currentUser}
+          onLogout={handleLogout}
         />
       </div>
       <div style={styles.main}>
         <div style={styles.header}>
           <div>
+            <div style={styles.headerContext}>
+              {currentOrg ? (
+                <span style={styles.orgTag}>
+                  <Building2 size={13} color="var(--color-primary)" /> {currentOrg.name}
+                </span>
+              ) : (
+                <span style={styles.personalTag}>Personal Workspace</span>
+              )}
+            </div>
             <h2 style={styles.boardTitle}>{currentBoard?.name || 'Select a board'}</h2>
             {isOffline && <span style={styles.offlineBadge}><WifiOff size={13} aria-hidden="true" /> Offline Mode</span>}
             {isConnected ? (
@@ -301,14 +400,27 @@ const Dashboard = () => {
               <span style={styles.offlineBadge}><Circle size={13} aria-hidden="true" /> Disconnected</span>
             )}
           </div>
-          <button
-            className="btn-primary"
-            onClick={() => setIsCreateModalOpen(true)}
-            disabled={!activeBoardId}
-            style={styles.addButton}
-          >
-            <Plus size={16} aria-hidden="true" /> Add Task
-          </button>
+          <div style={styles.headerActions}>
+            {currentOrg && isOrgAdmin && (
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => setIsInviteModalOpen(true)}
+                style={styles.inviteHeaderBtn}
+                title="Invite team member"
+              >
+                <UserPlus size={15} /> Invite Member
+              </button>
+            )}
+            <button
+              className="btn-primary"
+              onClick={() => setIsCreateModalOpen(true)}
+              disabled={!activeBoardId}
+              style={styles.addButton}
+            >
+              <Plus size={16} aria-hidden="true" /> Add Task
+            </button>
+          </div>
         </div>
         <div style={styles.columns}>
           {['Not Started', 'Doing', 'Done'].map(status => (
@@ -401,6 +513,21 @@ const Dashboard = () => {
           onResolve={handleConflictResolve}
         />
       )}
+
+      {/* Organization Modals */}
+      <CreateOrgModal
+        isOpen={isCreateOrgModalOpen}
+        onClose={() => setIsCreateOrgModalOpen(false)}
+        onOrgCreated={(newOrg) => {
+          setOrganizations(prev => [newOrg, ...prev]);
+          setActiveOrgId(newOrg._id);
+        }}
+      />
+      <InviteMemberModal
+        isOpen={isInviteModalOpen}
+        onClose={() => setIsInviteModalOpen(false)}
+        organization={currentOrg}
+      />
     </div>
   );
 };
@@ -441,6 +568,38 @@ const styles = {
     borderRadius: '12px',
     border: '1px solid var(--glass-border)',
     flexShrink: 0
+  },
+  headerContext: {
+    marginBottom: '4px'
+  },
+  orgTag: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '5px',
+    fontSize: '0.75rem',
+    fontWeight: '600',
+    color: 'var(--color-primary)',
+    background: 'rgba(99, 102, 241, 0.1)',
+    padding: '2px 8px',
+    borderRadius: '6px'
+  },
+  personalTag: {
+    fontSize: '0.75rem',
+    color: 'var(--text-muted)',
+    fontWeight: '500'
+  },
+  headerActions: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px'
+  },
+  inviteHeaderBtn: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '6px',
+    padding: '10px 16px',
+    fontSize: '0.9rem',
+    borderRadius: '8px'
   },
   boardTitle: {
     margin: 0,

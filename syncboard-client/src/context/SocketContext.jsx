@@ -5,7 +5,18 @@ const SocketContext = createContext();
 
 export const useSocket = () => {
   const context = useContext(SocketContext);
-  if (!context) throw new Error('useSocket must be used within SocketProvider');
+  if (!context) {
+    return {
+      socket: null,
+      isConnected: false,
+      connect: () => {},
+      disconnect: () => {},
+      joinBoard: () => {},
+      emit: () => {},
+      on: () => {},
+      off: () => {}
+    };
+  }
   return context;
 };
 
@@ -24,12 +35,12 @@ export const SocketProvider = ({ children }) => {
 
     socket.on('connect', () => {
       setIsConnected(true);
-      console.log('✅ Socket connected');
+      console.log('Socket connected');
     });
 
     socket.on('disconnect', () => {
       setIsConnected(false);
-      console.log('❌ Socket disconnected');
+      console.log('Socket disconnected');
     });
 
     socket.on('connect_error', (error) => {

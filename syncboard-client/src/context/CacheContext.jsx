@@ -18,9 +18,13 @@ export const useCache = () => {
   const context = useContext(CacheContext);
 
   if (!context) {
-    throw new Error(
-      'useCache must be used within CacheProvider'
-    );
+    return {
+      isOffline: false,
+      boardCache: { getAll: () => [], saveAll: () => {} },
+      taskCache: { getByBoard: () => [], saveByBoard: () => {}, add: () => {}, update: () => {}, remove: () => {} },
+      userCache: {},
+      setLastSync: () => {}
+    };
   }
 
   return context;

@@ -1,4 +1,5 @@
 import React from 'react';
+import { Trash2 } from 'lucide-react';
 
 const TaskDetailModal = ({ task, onClose, onSave, onDelete }) => {
   if (!task) return null;
@@ -89,7 +90,7 @@ const TaskDetailModal = ({ task, onClose, onSave, onDelete }) => {
             onClick={handleDelete}
             style={styles.deleteBtn}
           >
-            🗑️ Delete
+            <Trash2 size={16} aria-hidden="true" /> Delete
           </button>
           <button
             className="btn-secondary"

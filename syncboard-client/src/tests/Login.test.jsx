@@ -4,7 +4,14 @@ import { BrowserRouter } from 'react-router-dom';
 import Login from '../pages/Login';
 import api from '../api/apiClient';
 
-jest.mock('../api/apiClient');
+vi.mock('../api/apiClient', () => ({
+  default: {
+    get: vi.fn(),
+    post: vi.fn(),
+    put: vi.fn(),
+    delete: vi.fn()
+  }
+}));
 
 const renderLogin = () => {
   return render(

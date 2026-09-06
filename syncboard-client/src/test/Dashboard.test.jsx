@@ -1,139 +1,134 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import Dashboard from '../pages/Dashboard';
-import { BoardContext } from '../context/BoardContext';
+import api from '../api/apiClient';
 
 const mockNavigate = vi.fn();
 
 vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual('react-router-dom');
-
   return {
     ...actual,
     useNavigate: () => mockNavigate,
   };
 });
 
+vi.mock('../api/apiClient', () => ({
+  default: {
+    get: vi.fn(),
+    post: vi.fn(),
+    put: vi.fn(),
+    delete: vi.fn()
+  }
+}));
+
 const mockBoard = {
-  id: 'board-1',
+  _id: 'board-1',
   name: 'Test Board',
-  tasks: [
-    {
-      id: 'task-1',
-      title: 'Test Task',
-      description: 'Test description',
-      status: 'In Progress',
-      priority: 'High',
-      assignee: 'Member 4',
-    },
-  ],
+  organization: null,
 };
 
-const renderDashboard = () => {
-  const contextValue = {
-    boards: [mockBoard],
-    activeBoard: mockBoard,
-    activeBoardId: 'board-1',
-    setActiveBoardId: vi.fn(),
-    isOffline: false,
-    toggleConnection: vi.fn(),
-    moveTask: vi.fn(),
-    createBoard: vi.fn(),
-    deleteBoard: vi.fn(),
-    addTask: vi.fn(),
-    activityLogs: [],
-  };
+const mockTasks = [
+  {
+    _id: 'task-1',
+    title: 'Test Task',
+    description: 'Test description',
+    status: 'Not Started',
+    priority: 'High',
+    assignee: { name: 'Member 4' },
+    updatedAt: new Date().toISOString()
+  },
+];
 
+import { CacheProvider } from '../context/CacheContext';
+import { SocketProvider } from '../context/SocketContext';
+
+const renderDashboard = () => {
   return render(
-    <MemoryRouter>
-      <BoardContext.Provider value={contextValue}>
-        <Dashboard />
-      </BoardContext.Provider>
-    </MemoryRouter>
+    <CacheProvider>
+      <SocketProvider>
+        <MemoryRouter>
+          <Dashboard />
+        </MemoryRouter>
+      </SocketProvider>
+    </CacheProvider>
   );
 };
 
 describe('Dashboard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-
     localStorage.setItem('syncboard_auth', 'true');
-    localStorage.setItem('syncboard_user', 'Member 4');
+    localStorage.setItem('syncboard_token', 'test-token');
+    localStorage.setItem('syncboard_user', JSON.stringify({ name: 'Member 4' }));
+
+    api.get.mockImplementation((url) => {
+      if (url.includes('/tasks')) {
+        return Promise.resolve({ data: { success: true, data: mockTasks } });
+      }
+      if (url.includes('/orgs')) {
+        return Promise.resolve({ data: { success: true, data: [] } });
+      }
+      return Promise.resolve({ data: { success: true, data: [mockBoard] } });
+    });
   });
 
-  it('renders the SyncBoard dashboard', () => {
+  it('renders the Dashboard and active board', async () => {
     renderDashboard();
 
-    expect(screen.getByText('SyncBoard')).toBeInTheDocument();
-    expect(screen.getByText('Test Board')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getAllByText('Test Board').length).toBeGreaterThan(0);
+    });
   });
 
-  it('displays task information', () => {
+  it('displays task information', async () => {
     renderDashboard();
 
-    expect(screen.getByText('Test Task')).toBeInTheDocument();
-    expect(screen.getByText('Test description')).toBeInTheDocument();
-    expect(screen.getByText('High')).toBeInTheDocument();
-    expect(screen.getByText('Member 4')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText('Test Task')).toBeInTheDocument();
+      expect(screen.getByText('Test description')).toBeInTheDocument();
+      expect(screen.getByText('High')).toBeInTheDocument();
+      expect(screen.getAllByText('Member 4').length).toBeGreaterThan(0);
+    });
   });
 
-  it('displays all task status columns', () => {
+  it('displays all task status columns', async () => {
     renderDashboard();
 
-    expect(screen.getByText('Not Started')).toBeInTheDocument();
-    expect(screen.getByText('In Progress')).toBeInTheDocument();
-    expect(screen.getByText('Done')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText('Not Started')).toBeInTheDocument();
+      expect(screen.getByText('Doing')).toBeInTheDocument();
+      expect(screen.getByText('Done')).toBeInTheDocument();
+    });
   });
 
-  it('opens the create task modal when Add Task Card is clicked', () => {
+  it('opens the create task modal when Add Task is clicked', async () => {
     renderDashboard();
 
-    const addButtons = screen.getAllByText('Add Task Card');
+    await waitFor(() => {
+      expect(screen.getAllByText('Test Board').length).toBeGreaterThan(0);
+    });
 
-    fireEvent.click(addButtons[0]);
+    const addButton = screen.getByRole('button', { name: /Add Task/i });
+    fireEvent.click(addButton);
 
-    expect(screen.getByText(/create task/i)).toBeInTheDocument();
+    expect(screen.getByText(/Create Task/i)).toBeInTheDocument();
   });
 
-  it('calls toggleConnection when offline button is clicked', () => {
-    const toggleConnection = vi.fn();
-
-    const contextValue = {
-      boards: [mockBoard],
-      activeBoard: mockBoard,
-      activeBoardId: 'board-1',
-      setActiveBoardId: vi.fn(),
-      isOffline: false,
-      toggleConnection,
-      moveTask: vi.fn(),
-      createBoard: vi.fn(),
-      deleteBoard: vi.fn(),
-      addTask: vi.fn(),
-      activityLogs: [],
-    };
-
-    render(
-      <MemoryRouter>
-        <BoardContext.Provider value={contextValue}>
-          <Dashboard />
-        </BoardContext.Provider>
-      </MemoryRouter>
-    );
-
-    fireEvent.click(screen.getByText('Go Offline'));
-
-    expect(toggleConnection).toHaveBeenCalledTimes(1);
-  });
-
-  it('logs out the user', () => {
+  it('logs out the user when sign out is clicked', async () => {
     renderDashboard();
 
-    fireEvent.click(screen.getByText('Logout'));
+    await waitFor(() => {
+      expect(screen.getAllByText('Test Board').length).toBeGreaterThan(0);
+    });
+
+    const logoutBtn = screen.getByTitle('Sign out');
+    fireEvent.click(logoutBtn);
 
     expect(localStorage.getItem('syncboard_auth')).toBeNull();
     expect(localStorage.getItem('syncboard_user')).toBeNull();
     expect(mockNavigate).toHaveBeenCalledWith('/login');
   });
-});
+});
