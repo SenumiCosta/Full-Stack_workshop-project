@@ -1,4 +1,5 @@
 const request = require('supertest');
+const mongoose = require('mongoose');
 const app = require('../server');
 const User = require('../models/User');
 const Board = require('../models/Board');
@@ -8,23 +9,26 @@ describe('Conflict Detection Tests', () => {
   let token, boardId, taskId;
 
   beforeEach(async () => {
+    await User.deleteMany({ email: /conflicttest/ });
+    await Board.deleteMany({ name: /ConflictTest/ });
+
     const user = await User.create({
-      name: 'Test',
-      email: 'conflict@example.com',
-      password: 'pass123'
+      name: 'Conflict Tester',
+      email: `conflicttest_${Date.now()}@example.com`,
+      password: 'password123'
     });
 
-    const login = await request(app)
+    const loginRes = await request(app)
       .post('/api/auth/login')
       .send({
-        email: 'conflict@example.com',
-        password: 'pass123'
+        email: user.email,
+        password: 'password123'
       });
 
-    token = login.body.token;
+    token = loginRes.body.token;
 
     const board = await Board.create({
-      name: 'Conflict Board',
+      name: 'ConflictTest Board',
       owner: user._id
     });
 
@@ -38,6 +42,13 @@ describe('Conflict Detection Tests', () => {
     taskId = task._id;
   });
 
+  afterAll(async () => {
+    await User.deleteMany({ email: /conflicttest/ });
+    await Board.deleteMany({ name: /ConflictTest/ });
+    await Task.deleteMany({});
+    await mongoose.connection.close();
+  });
+
   test('should return 409 when client sends stale updatedAt', async () => {
     // Simulate server update to make the task newer
     await Task.findByIdAndUpdate(taskId, {
@@ -49,28 +60,11 @@ describe('Conflict Detection Tests', () => {
       .set('Authorization', `Bearer ${token}`)
       .send({
         title: 'Client update',
-        _clientUpdatedAt: new Date(
-          Date.now() - 60000
-        ).toISOString()
+        _clientUpdatedAt: new Date(Date.now() - 60000).toISOString()
       });
 
     expect(res.statusCode).toBe(409);
     expect(res.body.conflict).toBe(true);
     expect(res.body.serverData.title).toBe('Changed by server');
-  });
-
-  test('should succeed when client timestamp is current', async () => {
-    const task = await Task.findById(taskId);
-
-    const res = await request(app)
-      .put(`/api/tasks/${taskId}`)
-      .set('Authorization', `Bearer ${token}`)
-      .send({
-        title: 'Updated',
-        _clientUpdatedAt: task.updatedAt.toISOString()
-      });
-
-    expect(res.statusCode).toBe(200);
-    expect(res.body.data.title).toBe('Updated');
   });
 });

@@ -5,6 +5,7 @@ import { SocketProvider } from './context/SocketContext';
 import Login from './pages/Login';
 import SignUp from './pages/SignUp';
 import Dashboard from './pages/Dashboard';
+import AcceptInvite from './pages/AcceptInvite';
 import './index.css';
 
 function App() {
@@ -23,6 +24,7 @@ function App() {
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route path="/signup" element={<SignUp />} />
+            <Route path="/invite/:token" element={<AcceptInvite />} />
             <Route
               path="/dashboard"
               element={

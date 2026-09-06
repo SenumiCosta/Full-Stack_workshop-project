@@ -18,12 +18,18 @@ app.use(express.json());
 
 app.use('/api/auth', require('./routes/authRoutes'));
 app.use('/api/boards', require('./routes/boardRoutes'));
+app.use('/api/tasks', require('./routes/taskRoutes'));
+app.use('/api/orgs', require('./routes/orgRoutes'));
 
 const server = http.createServer(app);
 initializeSocket(server);
 
-const PORT = process.env.PORT || 5000;
-server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-  console.log(`http://localhost:${PORT}`);
-});
+if (process.env.NODE_ENV !== 'test') {
+  const PORT = process.env.PORT || 5000;
+  server.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+    console.log(`http://localhost:${PORT}`);
+  });
+}
+
+module.exports = app;

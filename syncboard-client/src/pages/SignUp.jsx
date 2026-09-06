@@ -21,7 +21,13 @@ const SignUp = () => {
     const res = await api.post('/auth/register', { name, email, password });
     localStorage.setItem('syncboard_token', res.data.token);
     localStorage.setItem('syncboard_user', JSON.stringify(res.data.user));
-    navigate('/dashboard');
+    const pendingInvite = localStorage.getItem('syncboard_pending_invite');
+    if (pendingInvite) {
+      localStorage.removeItem('syncboard_pending_invite');
+      navigate(`/invite/${pendingInvite}`);
+    } else {
+      navigate('/dashboard');
+    }
   } catch (err) {
     setError(err.response?.data?.message || 'Registration failed');
   }

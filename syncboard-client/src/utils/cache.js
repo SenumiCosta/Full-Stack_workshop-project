@@ -225,6 +225,75 @@ export const taskCache = {
   }
 };
 
+// Organization cache functions
+export const orgCache = {
+  getAll: () => cache.get('syncboard_orgs') || [],
+  saveAll: (orgs) => cache.set('syncboard_orgs', orgs),
+  add: (org) => {
+    const orgs = orgCache.getAll();
+    const updated = [org, ...orgs.filter(o => o._id !== org._id)];
+    orgCache.saveAll(updated);
+    return updated;
+  }
+};
+
+// Offline Mutation Queue functions
+const QUEUE_KEY = 'syncboard_offline_queue';
+
+export const syncQueue = {
+  getQueue: () => {
+    try {
+      const q = localStorage.getItem(QUEUE_KEY);
+      return q ? JSON.parse(q) : [];
+    } catch (e) {
+      console.error('Failed to read sync queue:', e);
+      return [];
+    }
+  },
+
+  enqueue: (item) => {
+    try {
+      const q = syncQueue.getQueue();
+      const newItem = {
+        ...item,
+        id: item.id || `queue_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        timestamp: item.timestamp || new Date().toISOString()
+      };
+      const updated = [...q, newItem];
+      localStorage.setItem(QUEUE_KEY, JSON.stringify(updated));
+      return updated;
+    } catch (e) {
+      console.error('Failed to enqueue item:', e);
+      return [];
+    }
+  },
+
+  dequeue: (opId) => {
+    try {
+      const q = syncQueue.getQueue();
+      const updated = q.filter(i => i.id !== opId);
+      localStorage.setItem(QUEUE_KEY, JSON.stringify(updated));
+      return updated;
+    } catch (e) {
+      console.error('Failed to dequeue item:', e);
+      return [];
+    }
+  },
+
+  clearQueue: () => {
+    try {
+      localStorage.removeItem(QUEUE_KEY);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  },
+
+  getPendingCount: () => {
+    return syncQueue.getQueue().length;
+  }
+};
+
 // User cache functions
 export const userCache = {
   getUser: () => cache.get(CACHE_KEYS.USER),

@@ -1,4 +1,5 @@
 import React from 'react';
+import { Trash2 } from 'lucide-react';
 
 const TaskDetailModal = ({ task, onClose, onSave, onDelete }) => {
   if (!task) return null;
@@ -26,7 +27,11 @@ const TaskDetailModal = ({ task, onClose, onSave, onDelete }) => {
         <div style={styles.infoGrid}>
           <div>
             <p style={styles.label}>Assignee</p>
-            <p style={styles.value}>{task.assignee?.name || 'Unassigned'}</p>
+            <p style={styles.value}>
+              {typeof task.assignee === 'object' && task.assignee !== null
+                ? (task.assignee.name || 'Unassigned')
+                : (task.assignee || 'Unassigned')}
+            </p>
           </div>
           <div>
             <p style={styles.label}>Priority</p>
@@ -89,7 +94,7 @@ const TaskDetailModal = ({ task, onClose, onSave, onDelete }) => {
             onClick={handleDelete}
             style={styles.deleteBtn}
           >
-            🗑️ Delete
+            <Trash2 size={16} aria-hidden="true" /> Delete
           </button>
           <button
             className="btn-secondary"

@@ -4,9 +4,14 @@ import { BrowserRouter } from 'react-router-dom';
 import SignUp from './SignUp';
 import api from '../api/apiClient';
 
-import { jest } from '@jest/globals';
-
-jest.mock('../api/apiClient');
+vi.mock('../api/apiClient', () => ({
+  default: {
+    get: vi.fn(),
+    post: vi.fn(),
+    put: vi.fn(),
+    delete: vi.fn()
+  }
+}));
 
 const renderSignUp = () => {
   return render(
