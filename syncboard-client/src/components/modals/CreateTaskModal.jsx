@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 
-const CreateTaskModal = ({ onClose, onSave }) => {
+const CreateTaskModal = ({ onClose, onSave, onTaskCreated }) => {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState('Medium');
@@ -11,15 +11,17 @@ const CreateTaskModal = ({ onClose, onSave }) => {
 
     if (!title.trim()) return;
 
-    onSave({
-      title,
-      description,
+    const taskData = {
+      title: title.trim(),
+      description: description.trim(),
       priority,
       assignee,
       status: 'Not Started',
-    });
+    };
 
-    onClose();
+    if (onSave) onSave(taskData);
+    if (onTaskCreated) onTaskCreated(taskData);
+    if (onClose) onClose();
   };
 
   return (

@@ -127,7 +127,7 @@ const Dashboard = () => {
       _id: `temp_${Date.now()}`,
       history: [{ text: 'Task created', timestamp: new Date().toISOString() }]
     };
-    setTasks([...tasks, tempTask]);
+    setTasks(prev => [...prev, tempTask]);
     taskCache.add(activeBoardId, tempTask);
     if (isOffline) {
       alert('Task saved offline. Will sync when online.');
@@ -136,16 +136,16 @@ const Dashboard = () => {
     try {
       const res = await api.post(`/boards/${activeBoardId}/tasks`, newTask);
       const createdTask = res.data.data || res.data;
-      const updatedTasks = tasks.filter(t => t._id !== tempTask._id).concat(createdTask);
-      setTasks(updatedTasks);
-      taskCache.saveByBoard(activeBoardId, updatedTasks);
+      setTasks(prev => prev.map(t => t._id === tempTask._id ? createdTask : t));
+      const currentTasks = taskCache.getByBoard(activeBoardId) || [];
+      taskCache.saveByBoard(activeBoardId, currentTasks.filter(t => t._id !== tempTask._id).concat(createdTask));
       setLastSync();
     } catch (err) {
       console.error('Failed to create task:', err);
-      const updatedTasks = tasks.filter(t => t._id !== tempTask._id);
-      setTasks(updatedTasks);
-      taskCache.saveByBoard(activeBoardId, updatedTasks);
-      alert('Failed to create task. Please try again.');
+      setTasks(prev => prev.filter(t => t._id !== tempTask._id));
+      const currentTasks = taskCache.getByBoard(activeBoardId) || [];
+      taskCache.saveByBoard(activeBoardId, currentTasks.filter(t => t._id !== tempTask._id));
+      alert(err.response?.data?.message || 'Failed to create task. Please try again.');
     }
   };
 
@@ -346,6 +346,7 @@ const Dashboard = () => {
         <CreateTaskModal
           boardId={activeBoardId}
           onClose={() => setIsCreateModalOpen(false)}
+          onSave={handleTaskCreatedLocal}
           onTaskCreated={handleTaskCreatedLocal}
         />
       )}
