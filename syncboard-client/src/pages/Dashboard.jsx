@@ -708,6 +708,7 @@ const Dashboard = () => {
                 </span>
               )}
             </div>
+            <button type="button" className="btn-secondary" style={styles.syncBtn}
               onClick={() => {
                 alert('You are currently offline. Reconnect to the network to sync changes.');
               }}
