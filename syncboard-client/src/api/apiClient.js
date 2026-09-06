@@ -1,44 +1,35 @@
-// Mock API client to simulate backend responses for UI-only MERN prototype
-// This eliminates the need to install axios and runs entirely in the browser
+import axios from 'axios';
 
-const api = {
-  post: async (url, data) => {
-    // Simulate short network delay
-    await new Promise(resolve => setTimeout(resolve, 600));
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
-    if (url === '/auth/login') {
-      if (!data.email || !data.password) {
-        throw { response: { data: { message: 'Email and password are required.' } } };
-      }
-      // Return a simulated success payload
-      return {
-        data: {
-          token: 'mock-jwt-token-' + Date.now(),
-          user: {
-            name: data.email.split('@')[0],
-            email: data.email
-          }
-        }
-      };
-    }
-
-    if (url === '/auth/register') {
-      if (!data.name || !data.email || !data.password) {
-        throw { response: { data: { message: 'All fields are required.' } } };
-      }
-      return {
-        data: {
-          token: 'mock-jwt-token-' + Date.now(),
-          user: {
-            name: data.name,
-            email: data.email
-          }
-        }
-      };
-    }
-
-    throw { response: { data: { message: 'Endpoint not found' } } };
+const api = axios.create({
+  baseURL: API_URL,
+  headers: {
+    'Content-Type': 'application/json'
   }
-};
+});
+
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('syncboard_token');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response && error.response.status === 409) {
+      return Promise.reject({
+        ...error,
+        isConflict: true,
+        serverData: error.response.data.serverData,
+        serverUpdatedAt: error.response.data.serverUpdatedAt
+      });
+    }
+    return Promise.reject(error);
+  }
+);
 
 export default api;

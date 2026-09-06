@@ -11,18 +11,11 @@ exports.register = async (req, res) => {
   try {
     const { name, email, password } = req.body;
 
-    if (!name || !email || !password) {
-      return res.status(400).json({
-        success: false,
-        message: 'Please provide name, email and password'
-      });
-    }
-
     const userExists = await User.findOne({ email });
     if (userExists) {
       return res.status(400).json({
         success: false,
-        message: 'User already exists with this email'
+        message: 'User already exists'
       });
     }
 
@@ -39,11 +32,9 @@ exports.register = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Register error:', error);
     res.status(500).json({
       success: false,
-      message: 'Server error',
-      error: error.message
+      message: error.message
     });
   }
 };
@@ -87,11 +78,9 @@ exports.login = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Login error:', error);
     res.status(500).json({
       success: false,
-      message: 'Server error',
-      error: error.message
+      message: error.message
     });
   }
 };
@@ -108,10 +97,9 @@ exports.getMe = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('GetMe error:', error);
     res.status(500).json({
       success: false,
-      message: 'Server error'
+      message: error.message
     });
   }
 };
