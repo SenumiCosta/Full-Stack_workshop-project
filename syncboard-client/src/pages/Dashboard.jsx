@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react';
+import { CheckCircle2, Circle, Plus, WifiOff } from 'lucide-react';
 import { useCache } from '../context/CacheContext';
 import { useSocket } from '../context/SocketContext';
 import api from '../api/apiClient';
 import Sidebar from '../components/Sidebar/Sidebar';
 import ActivityLog from '../components/Common/ActivityLog';
 import CreateTaskModal from "../components/modals/CreateTaskModal";
+import ConflictModal from '../components/modals/ConflictModal';
+import TaskDetailModal from '../components/modals/TaskDetailMOdal';
 
 const Dashboard = () => {
   const [boards, setBoards] = useState([]);
@@ -87,7 +90,7 @@ const Dashboard = () => {
   useEffect(() => {
     if (!socket || !activeBoardId) return;
     const handleTaskCreated = (newTask) => {
-      console.log('📝 Task created:', newTask);
+      console.log('Task created:', newTask);
       setTasks(prev => {
         if (prev.some(t => t._id === newTask._id)) return prev;
         return [...prev, newTask];
@@ -95,7 +98,7 @@ const Dashboard = () => {
       taskCache.add(activeBoardId, newTask);
     };
     const handleTaskUpdated = (updatedTask) => {
-      console.log('🔄 Task updated:', updatedTask);
+      console.log('Task updated:', updatedTask);
       setTasks(prev => {
         const exists = prev.some(t => t._id === updatedTask._id);
         if (!exists) return [...prev, updatedTask];
@@ -104,7 +107,7 @@ const Dashboard = () => {
       taskCache.update(activeBoardId, updatedTask._id, updatedTask);
     };
     const handleTaskDeleted = (taskId) => {
-      console.log('🗑️ Task deleted:', taskId);
+      console.log('Task deleted:', taskId);
       setTasks(prev => prev.filter(t => t._id !== taskId));
       taskCache.remove(activeBoardId, taskId);
     };
@@ -212,6 +215,37 @@ const Dashboard = () => {
     }
   };
 
+  const handleCreateBoard = async (boardName) => {
+    try {
+      const res = await api.post('/boards', { name: boardName });
+      const newBoard = res.data.data || res.data;
+      const updatedBoards = [...boards, newBoard];
+      setBoards(updatedBoards);
+      setActiveBoardId(newBoard._id);
+      boardCache.saveAll(updatedBoards);
+      setLastSync();
+    } catch (err) {
+      console.error('Failed to create board:', err);
+      alert(err.response?.data?.message || 'Failed to create board');
+    }
+  };
+
+  const handleDeleteBoard = async (boardId) => {
+    try {
+      await api.delete(`/boards/${boardId}`);
+      const updatedBoards = boards.filter(b => b._id !== boardId);
+      setBoards(updatedBoards);
+      boardCache.saveAll(updatedBoards);
+      if (activeBoardId === boardId) {
+        setActiveBoardId(updatedBoards.length > 0 ? updatedBoards[0]._id : null);
+      }
+      setLastSync();
+    } catch (err) {
+      console.error('Failed to delete board:', err);
+      alert(err.response?.data?.message || 'Failed to delete board');
+    }
+  };
+
   const handleBoardSelect = (boardId) => {
     setActiveBoardId(boardId);
   };
@@ -225,17 +259,19 @@ const Dashboard = () => {
           boards={boards}
           activeBoardId={activeBoardId}
           onSelectBoard={handleBoardSelect}
+          onCreateBoard={handleCreateBoard}
+          onDeleteBoard={handleDeleteBoard}
         />
       </div>
       <div style={styles.main}>
         <div style={styles.header}>
           <div>
             <h2 style={styles.boardTitle}>{currentBoard?.name || 'Select a board'}</h2>
-            {isOffline && <span style={styles.offlineBadge}>📡 Offline Mode</span>}
+            {isOffline && <span style={styles.offlineBadge}><WifiOff size={13} aria-hidden="true" /> Offline Mode</span>}
             {isConnected ? (
-              <span style={styles.onlineBadge}>🟢 Live</span>
+              <span style={styles.onlineBadge}><CheckCircle2 size={13} aria-hidden="true" /> Live</span>
             ) : (
-              <span style={styles.offlineBadge}>🔴 Disconnected</span>
+              <span style={styles.offlineBadge}><Circle size={13} aria-hidden="true" /> Disconnected</span>
             )}
           </div>
           <button
@@ -244,7 +280,7 @@ const Dashboard = () => {
             disabled={!activeBoardId}
             style={styles.addButton}
           >
-            + Add Task
+            <Plus size={16} aria-hidden="true" /> Add Task
           </button>
         </div>
         <div style={styles.columns}>
@@ -377,6 +413,9 @@ const styles = {
     color: 'var(--text-primary)'
   },
   offlineBadge: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '4px',
     fontSize: '0.75rem',
     background: '#ef4444',
     color: '#fff',
@@ -385,6 +424,9 @@ const styles = {
     marginLeft: '10px'
   },
   onlineBadge: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '4px',
     fontSize: '0.75rem',
     background: '#10b981',
     color: '#fff',
@@ -393,6 +435,10 @@ const styles = {
     marginLeft: '10px'
   },
   addButton: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '6px',
     padding: '10px 20px',
     fontSize: '0.9rem'
   },
