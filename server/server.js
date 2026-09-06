@@ -18,6 +18,7 @@ app.use(express.json());
 
 app.use('/api/auth', require('./routes/authRoutes'));
 app.use('/api/boards', require('./routes/boardRoutes'));
+app.use('/api/tasks', require('./routes/taskRoutes'));
 
 const server = http.createServer(app);
 initializeSocket(server);

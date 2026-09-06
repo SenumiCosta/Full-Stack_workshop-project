@@ -149,11 +149,34 @@ const Dashboard = () => {
     }
   };
 
+  const handleDragStart = (e, taskId) => {
+    e.dataTransfer.setData('text/plain', taskId);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDrop = async (e, targetStatus) => {
+    e.preventDefault();
+    const taskId = e.dataTransfer.getData('text/plain');
+    if (!taskId) return;
+    const task = tasks.find(t => t._id === taskId);
+    if (!task || task.status === targetStatus) return;
+
+    await handleTaskUpdate(taskId, { status: targetStatus });
+  };
+
   const handleTaskUpdate = async (taskId, updates) => {
     const oldTask = tasks.find(t => t._id === taskId);
     if (!oldTask) return;
     const updatedTasks = tasks.map(t => t._id === taskId ? { ...t, ...updates } : t);
     setTasks(updatedTasks);
+    if (selectedTask && selectedTask._id === taskId) {
+      setSelectedTask(prev => ({ ...prev, ...updates }));
+    }
     taskCache.saveByBoard(activeBoardId, updatedTasks);
     if (isOffline) {
       alert('Task updated offline. Will sync when online.');
@@ -162,8 +185,12 @@ const Dashboard = () => {
     try {
       const updatesWithTimestamp = { ...updates, _clientUpdatedAt: oldTask.updatedAt };
       const res = await api.put(`/tasks/${taskId}`, updatesWithTimestamp);
-      const finalTasks = tasks.map(t => t._id === taskId ? res.data.data : t);
+      const updatedTask = res.data.data || { ...oldTask, ...updates };
+      const finalTasks = tasks.map(t => t._id === taskId ? updatedTask : t);
       setTasks(finalTasks);
+      if (selectedTask && selectedTask._id === taskId) {
+        setSelectedTask(updatedTask);
+      }
       taskCache.saveByBoard(activeBoardId, finalTasks);
       setLastSync();
     } catch (err) {
@@ -176,7 +203,7 @@ const Dashboard = () => {
         console.error('Failed to update task:', err);
         setTasks(tasks);
         taskCache.saveByBoard(activeBoardId, tasks);
-        alert('Failed to update task. Please try again.');
+        alert(err.response?.data?.message || 'Failed to update task. Please try again.');
       }
     }
   };
@@ -285,7 +312,12 @@ const Dashboard = () => {
         </div>
         <div style={styles.columns}>
           {['Not Started', 'Doing', 'Done'].map(status => (
-            <div key={status} style={styles.column}>
+            <div
+              key={status}
+              style={styles.column}
+              onDragOver={handleDragOver}
+              onDrop={(e) => handleDrop(e, status)}
+            >
               <div style={styles.columnHeader}>
                 <h4 style={styles.columnTitle}>{status}</h4>
                 <span style={styles.taskCount}>
@@ -298,7 +330,9 @@ const Dashboard = () => {
                   .map(task => (
                     <div
                       key={task._id}
-                      style={styles.taskCard}
+                      style={{ ...styles.taskCard, cursor: 'grab' }}
+                      draggable
+                      onDragStart={(e) => handleDragStart(e, task._id)}
                       onClick={() => setSelectedTask(task)}
                     >
                       <div style={styles.taskHeader}>
