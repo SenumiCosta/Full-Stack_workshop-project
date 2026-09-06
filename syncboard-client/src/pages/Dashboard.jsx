@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { CheckCircle2, Circle, Plus, WifiOff, Building2, UserPlus, Calendar } from 'lucide-react';
+import { CheckCircle2, Circle, Plus, WifiOff, Building2, UserPlus, Calendar, RefreshCw } from 'lucide-react';
 import { useCache } from '../context/CacheContext';
 import { useSocket } from '../context/SocketContext';
 import api from '../api/apiClient';
@@ -708,17 +708,21 @@ const Dashboard = () => {
                 </span>
               )}
             </div>
+            <button
+              type="button"
               onClick={() => {
                 alert('You are currently offline. Reconnect to the network to sync changes.');
               }}
+              style={styles.syncStatusButton}
             >
+              <RefreshCw size={14} aria-hidden="true" />
               Sync Status
             </button>
           </div>
         )}
         {isSyncing && (
           <div style={styles.syncingBanner}>
-            <span>🔄</span>
+            <RefreshCw size={15} aria-hidden="true" />
             <span>Syncing offline changes with database...</span>
           </div>
         )}
